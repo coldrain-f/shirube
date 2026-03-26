@@ -12,13 +12,20 @@ import { addWordToDictionary } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export default function StagingClientView({ 
   initialWords, 
-  initialQuery = '' 
+  initialQuery = '',
+  totalCount,
+  currentPage,
+  pageSize
 }: { 
   initialWords: staging_words[],
-  initialQuery?: string 
+  initialQuery?: string,
+  totalCount: number,
+  currentPage: number,
+  pageSize: number
 }) {
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -131,46 +138,79 @@ export default function StagingClientView({
       orientation="horizontal" 
       className="h-[calc(100vh-3.5rem)] rounded-none"
     >
-      <ResizablePanel defaultSize={30} minSize={15} className="flex flex-col border-r">
-        <ScrollArea className="h-full">
-          <div className="p-4 space-y-4">
-                <h2 className="font-semibold">대기열 ({words.length})</h2>
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  router.push(`${pathname}?q=${encodeURIComponent(searchInput)}`);
-                }} className="flex gap-2">
-                  <Input 
-                    placeholder="단어 검색 (엔터)" 
-                    value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                  />
-                  <Button type="submit" variant="secondary">검색</Button>
-                </form>
-                
-                <div className="space-y-2 mt-4">
-                {words.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
-                ) : (
-                  words.map((word, idx) => (
-                    <div 
-                      key={word.id} 
-                      ref={(el) => { itemRefs.current[idx] = el }}
-                      onClick={() => setSelectedIndex(idx)}
-                      className={`p-3 border rounded-md cursor-pointer transition-colors ${
-                        idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-lg">{word.term}</span>
-                        <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
-                      </div>
-                      {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1">{word.part_of_speech}</div>}
-                    </div>
-                  ))
-                )}
+      <ResizablePanel defaultSize={30} minSize={15} className="flex flex-col border-r overflow-hidden">
+        {/* 검색 영역 — 상단 고정 */}
+        <div className="p-4 pb-3 space-y-3 border-b bg-background">
+          <h2 className="font-semibold">대기열 ({totalCount})</h2>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            router.push(`${pathname}?q=${encodeURIComponent(searchInput)}`);
+          }} className="flex gap-2">
+            <Input 
+              placeholder="단어 검색 (엔터)" 
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+            />
+            <Button type="submit" variant="secondary">검색</Button>
+          </form>
+        </div>
+
+        {/* 단어 리스트 — 스크롤 영역 */}
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-2">
+            {words.length === 0 ? (
+              <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
+            ) : (
+              words.map((word, idx) => (
+                <div 
+                  key={word.id} 
+                  ref={(el) => { itemRefs.current[idx] = el }}
+                  onClick={() => setSelectedIndex(idx)}
+                  className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                    idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-lg">{word.term}</span>
+                    <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
+                  </div>
+                  {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1">{word.part_of_speech}</div>}
                 </div>
-              </div>
-            </ScrollArea>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+
+        {/* 페이지네이션 — 하단 고정 */}
+        {totalCount > pageSize && (() => {
+          const totalPages = Math.ceil(totalCount / pageSize)
+          const queryParam = searchInput ? `q=${encodeURIComponent(searchInput)}&` : ''
+          return (
+            <div className="p-3 border-t bg-background flex items-center justify-between text-sm">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1}
+                onClick={() => router.push(`${pathname}?${queryParam}page=${currentPage - 1}`)}
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                이전
+              </Button>
+              <span className="text-muted-foreground">
+                {currentPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => router.push(`${pathname}?${queryParam}page=${currentPage + 1}`)}
+              >
+                다음
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          )
+        })()}
       </ResizablePanel>
       
       <ResizableHandle withHandle />

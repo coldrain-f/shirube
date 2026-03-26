@@ -3,15 +3,24 @@
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 
-export async function getStagingWords(searchQuery: string = '') {
-  return await prisma.staging_words.findMany({
-    where: { 
-      is_processed: false,
-      ...(searchQuery ? { term: { contains: searchQuery } } : {})
-    },
-    orderBy: { frequency: 'desc' },
-    take: 100, // Limit to 100 for safety against huge staging db
-  })
+export async function getStagingWords(searchQuery: string = '', page: number = 1) {
+  const pageSize = 100
+  const where = {
+    is_processed: false,
+    ...(searchQuery ? { term: { contains: searchQuery } } : {})
+  }
+
+  const [words, totalCount] = await Promise.all([
+    prisma.staging_words.findMany({
+      where,
+      orderBy: { frequency: 'desc' },
+      take: pageSize,
+      skip: (page - 1) * pageSize,
+    }),
+    prisma.staging_words.count({ where })
+  ])
+
+  return { words, totalCount, page, pageSize }
 }
 
 export async function markWordProcessed(id: number) {
