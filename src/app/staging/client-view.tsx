@@ -128,8 +128,7 @@ export default function StagingClientView({
 
   return (
     <ResizablePanelGroup 
-      // @ts-expect-error shadcn internal type mismatch
-      direction="horizontal" 
+      orientation="horizontal" 
       className="h-[calc(100vh-3.5rem)] rounded-none"
     >
       <ResizablePanel defaultSize={30} minSize={15} className="flex flex-col border-r">
@@ -178,7 +177,7 @@ export default function StagingClientView({
       
       <ResizablePanel defaultSize={30} minSize={25} className="bg-muted/10 p-4 overflow-y-auto">
         {selectedWord ? (
-          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 h-full flex flex-col">
+          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 min-h-full flex flex-col">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-xl">{selectedWord.term} 등록</h3>
                   <span className="text-xs text-muted-foreground font-mono bg-background px-2 py-1 rounded border shadow-sm">Cmd+Enter로 저장</span>
@@ -279,11 +278,11 @@ export default function StagingClientView({
       
       <ResizableHandle withHandle />
       
-      <ResizablePanel defaultSize={40} minSize={25}>
+      <ResizablePanel defaultSize={40} minSize={25} className="relative">
         {selectedWord ? (
           <iframe 
             src={`https://ja.dict.naver.com/#/search?query=${encodeURIComponent(selectedWord.term)}`}
-            className="w-full h-full border-0"
+            className="absolute inset-0 w-full h-full border-0"
             title="Naver Dictionary"
           />
         ) : (
