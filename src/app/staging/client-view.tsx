@@ -138,9 +138,10 @@ export default function StagingClientView({
       orientation="horizontal" 
       className="h-[calc(100vh-3.5rem)] rounded-none"
     >
-      <ResizablePanel defaultSize={30} minSize={15} className="flex flex-col border-r overflow-hidden">
+      <ResizablePanel defaultSize={30} minSize={15}>
+        <div className="flex flex-col h-full overflow-hidden border-r">
         {/* 검색 영역 — 상단 고정 */}
-        <div className="p-4 pb-3 space-y-3 border-b bg-background">
+        <div className="p-4 pb-3 space-y-3 border-b bg-background shrink-0">
           <h2 className="font-semibold">대기열 ({totalCount})</h2>
           <form onSubmit={(e) => {
             e.preventDefault();
@@ -156,7 +157,7 @@ export default function StagingClientView({
         </div>
 
         {/* 단어 리스트 — 스크롤 영역 */}
-        <ScrollArea className="flex-1">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="p-4 space-y-2">
             {words.length === 0 ? (
               <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
@@ -179,14 +180,14 @@ export default function StagingClientView({
               ))
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* 페이지네이션 — 하단 고정 */}
         {totalCount > pageSize && (() => {
           const totalPages = Math.ceil(totalCount / pageSize)
           const queryParam = searchInput ? `q=${encodeURIComponent(searchInput)}&` : ''
           return (
-            <div className="p-3 border-t bg-background flex items-center justify-between text-sm">
+            <div className="p-3 border-t bg-background flex items-center justify-between text-sm shrink-0">
               <Button
                 variant="outline"
                 size="sm"
@@ -211,6 +212,7 @@ export default function StagingClientView({
             </div>
           )
         })()}
+        </div>
       </ResizablePanel>
       
       <ResizableHandle withHandle />
