@@ -19,3 +19,10 @@
 ## Phase 4: 내보내기 기능 (Export Logic)
 - [x] Yomitan Export (index.json, term_bank_1.json 맵핑 및 압축)
 - [x] Kindle Export (HTML/OPF 템플릿 기반 및 mobi 컴파일)
+
+## Phase 5: 추가 기능
+- [x] 대기열 데이터 내보내기 기능(CSV/JSON)
+- [x] 대기열 데이터 초기화 기능
+- [ ] 대기열 데이터 불러오기 기능(CSV/JSON)
+- [ ] JAKO 2018사전 마이그레이션
+- [ ] 대기열 데이터에 JPDB Frequency 빈도수 자동으로 채우기 기능
