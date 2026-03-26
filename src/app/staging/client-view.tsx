@@ -4,15 +4,15 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { staging_words } from '@prisma/client'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { ChevronLeft, ChevronRight, Trash2, Download } from 'lucide-react'
 
 export default function StagingClientView({ 
   initialWords, 
@@ -146,7 +146,68 @@ export default function StagingClientView({
         <div className="flex flex-col h-full overflow-hidden border-r">
         {/* 검색 영역 — 상단 고정 */}
         <div className="p-4 pb-3 space-y-3 border-b bg-background shrink-0">
-          <h2 className="font-semibold">대기열 ({totalCount})</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold">대기열 ({totalCount})</h2>
+            <div className="flex gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer" title="내보내기">
+                    <Download className="h-4 w-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={async () => {
+                    try {
+                      toast.info('내보내기 준비 중...')
+                      const data = await getAllStagingWordsForExport()
+                      const csv = [
+                        'term,reading,meaning,frequency,part_of_speech,source',
+                        ...data.map(w => 
+                          [w.term, w.reading || '', `"${(w.meaning || '').replace(/"/g, '""')}"`, w.frequency, w.part_of_speech || '', w.source].join(',')
+                        )
+                      ].join('\n')
+                      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url; a.download = `shirube_dict_staging_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.csv`
+                      a.click(); URL.revokeObjectURL(url)
+                      toast.success(`${data.length}개 단어를 CSV로 내보냈습니다.`)
+                    } catch { toast.error('내보내기에 실패했습니다.') }
+                  }}>
+                    CSV로 내보내기
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={async () => {
+                    try {
+                      toast.info('내보내기 준비 중...')
+                      const data = await getAllStagingWordsForExport()
+                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url; a.download = `shirube_dict_staging_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.json`
+                      a.click(); URL.revokeObjectURL(url)
+                      toast.success(`${data.length}개 단어를 JSON으로 내보냈습니다.`)
+                    } catch { toast.error('내보내기에 실패했습니다.') }
+                  }}>
+                    JSON으로 내보내기
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 text-destructive hover:text-destructive" 
+                title="대기열 초기화"
+                onClick={async () => {
+                  if (!window.confirm(`대기열의 미처리 단어 ${totalCount}개를 모두 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return
+                  try {
+                    const result = await clearAllStagingWords()
+                    toast.success(`${result.deleted}개 단어가 삭제되었습니다.`)
+                    router.push(pathname)
+                  } catch { toast.error('삭제에 실패했습니다.') }
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
           <form onSubmit={(e) => {
             e.preventDefault();
             router.push(`${pathname}?q=${encodeURIComponent(searchInput)}`);

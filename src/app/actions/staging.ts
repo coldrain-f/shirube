@@ -69,3 +69,26 @@ export async function addWordToDictionary(data: {
   revalidatePath('/staging')
   revalidatePath('/dictionary')
 }
+
+export async function clearAllStagingWords() {
+  const result = await prisma.staging_words.deleteMany({
+    where: { is_processed: false },
+  })
+  revalidatePath('/staging')
+  return { deleted: result.count }
+}
+
+export async function getAllStagingWordsForExport() {
+  return await prisma.staging_words.findMany({
+    where: { is_processed: false },
+    orderBy: { frequency: 'desc' },
+    select: {
+      term: true,
+      reading: true,
+      meaning: true,
+      frequency: true,
+      part_of_speech: true,
+      source: true,
+    }
+  })
+}
