@@ -30,7 +30,9 @@ export default function StagingClientView({
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [searchInput, setSearchInput] = useState(initialQuery)
-  const [showPreview, setShowPreview] = useState(false)
+  const [showPreview, setShowPreview] = useState(true)
+  const [isEditingPage, setIsEditingPage] = useState(false)
+  const [pageInput, setPageInput] = useState(String(currentPage))
   const router = useRouter()
   const pathname = usePathname()
   const [formData, setFormData] = useState({
@@ -44,10 +46,12 @@ export default function StagingClientView({
   const formRef = useRef<HTMLFormElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   
-  // Sync words if initialWords changes
+  // Sync words if initialWords changes (page navigation)
   useEffect(() => {
     setWords(initialWords)
-  }, [initialWords])
+    setSelectedIndex(0)
+    setPageInput(String(currentPage))
+  }, [initialWords, currentPage])
 
   const selectedWord = words[selectedIndex]
 
@@ -197,9 +201,30 @@ export default function StagingClientView({
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 이전
               </Button>
-              <span className="text-muted-foreground">
-                {currentPage} / {totalPages}
-              </span>
+              {isEditingPage ? (
+                <form onSubmit={(e) => {
+                  e.preventDefault()
+                  const p = Math.max(1, Math.min(totalPages, parseInt(pageInput, 10) || 1))
+                  setIsEditingPage(false)
+                  router.push(`${pathname}?${queryParam}page=${p}`)
+                }} className="flex items-center gap-1">
+                  <Input
+                    className="w-16 h-7 text-center text-sm"
+                    value={pageInput}
+                    onChange={e => setPageInput(e.target.value)}
+                    onBlur={() => setIsEditingPage(false)}
+                    autoFocus
+                  />
+                  <span className="text-muted-foreground">/ {totalPages}</span>
+                </form>
+              ) : (
+                <button
+                  onClick={() => { setPageInput(String(currentPage)); setIsEditingPage(true) }}
+                  className="text-muted-foreground hover:text-foreground hover:underline cursor-pointer transition-colors"
+                >
+                  {currentPage} / {totalPages}
+                </button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
