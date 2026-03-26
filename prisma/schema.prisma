@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model staging_words {
+  id             Int     @id @default(autoincrement())
+  term           String
+  reading        String?
+  meaning        String?
+  frequency      Int
+  part_of_speech String?
+  source         String
+  is_processed   Boolean @default(false)
+}
+
+model dictionary_entries {
+  id             Int      @id @default(autoincrement())
+  term           String
+  reading        String
+  meaning        String
+  part_of_speech String
+  pitch_accent   String?
+  audio_file     String?
+  tags           String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([term, reading])
+}
