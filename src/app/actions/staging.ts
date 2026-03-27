@@ -1,5 +1,6 @@
 'use server'
 
+import { Prisma, staging_words } from '@prisma/client'
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import fs from 'fs/promises'
@@ -7,20 +8,28 @@ import path from 'path'
 
 export async function getStagingWords(searchQuery: string = '', page: number = 1) {
   const pageSize = 100
-  const where = {
-    is_processed: false,
-    ...(searchQuery ? { term: { contains: searchQuery } } : {})
-  }
+  const searchPattern = searchQuery ? `%${searchQuery}%` : null
 
-  const [words, totalCount] = await Promise.all([
-    prisma.staging_words.findMany({
-      where,
-      orderBy: { frequency: 'asc' },
-      take: pageSize,
-      skip: (page - 1) * pageSize,
-    }),
-    prisma.staging_words.count({ where })
+  const [words, countResult] = await Promise.all([
+    searchPattern
+      ? prisma.$queryRaw<staging_words[]>`
+          SELECT * FROM staging_words 
+          WHERE is_processed = 0 AND term LIKE ${searchPattern}
+          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC 
+          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+        `
+      : prisma.$queryRaw<staging_words[]>`
+          SELECT * FROM staging_words 
+          WHERE is_processed = 0
+          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC 
+          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+        `,
+    searchPattern
+      ? prisma.$queryRaw<{count: bigint}[]>`SELECT COUNT(*) as count FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern}`
+      : prisma.$queryRaw<{count: bigint}[]>`SELECT COUNT(*) as count FROM staging_words WHERE is_processed = 0`
   ])
+
+  const totalCount = Number(countResult[0]?.count || 0)
 
   return { words, totalCount, page, pageSize }
 }
@@ -81,18 +90,12 @@ export async function clearAllStagingWords() {
 }
 
 export async function getAllStagingWordsForExport() {
-  return await prisma.staging_words.findMany({
-    where: { is_processed: false },
-    orderBy: { frequency: 'asc' },
-    select: {
-      term: true,
-      reading: true,
-      meaning: true,
-      frequency: true,
-      part_of_speech: true,
-      source: true,
-    }
-  })
+  return await prisma.$queryRaw<{term: string, reading: string|null, meaning: string|null, frequency: number, part_of_speech: string|null, source: string}[]>`
+    SELECT term, reading, meaning, frequency, part_of_speech, source 
+    FROM staging_words 
+    WHERE is_processed = 0 
+    ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC
+  `
 }
 
 export async function importStagingWords(
@@ -173,11 +176,9 @@ export async function getJPDBUpdatesNeeded() {
       .map((word) => ({
         id: word.id,
         currentFreq: word.frequency,
-        newFreq: frequencyMap.get(word.term)
+        newFreq: frequencyMap.has(word.term) ? frequencyMap.get(word.term)! : -1
       }))
-      .filter((update): update is typeof update & { newFreq: number } => 
-        update.newFreq !== undefined && update.newFreq !== update.currentFreq
-      )
+      .filter((update) => update.newFreq !== update.currentFreq)
       .map((update) => ({
         id: update.id,
         frequency: update.newFreq
