@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronLeft, ChevronRight, Trash2, Download, Upload } from 'lucide-react'
 
@@ -41,6 +42,7 @@ export default function StagingClientView({
   const [skipDuplicates, setSkipDuplicates] = useState(true)
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
+  const [clearOpen, setClearOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const [formData, setFormData] = useState({
@@ -238,6 +240,17 @@ export default function StagingClientView({
     }
   }, [importData, skipDuplicates, router, pathname])
 
+  const handleClearAll = async () => {
+    try {
+      const result = await clearAllStagingWords()
+      toast.success(`${result.deleted}개 단어가 삭제되었습니다.`)
+      setClearOpen(false)
+      router.push(pathname)
+    } catch { 
+      toast.error('삭제에 실패했습니다.') 
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedWord) return
@@ -329,14 +342,7 @@ export default function StagingClientView({
                 size="icon" 
                 className="h-7 w-7 text-destructive hover:text-destructive" 
                 title="대기열 초기화"
-                onClick={async () => {
-                  if (!window.confirm(`대기열의 미처리 단어 ${totalCount}개를 모두 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return
-                  try {
-                    const result = await clearAllStagingWords()
-                    toast.success(`${result.deleted}개 단어가 삭제되었습니다.`)
-                    router.push(pathname)
-                  } catch { toast.error('삭제에 실패했습니다.') }
-                }}
+                onClick={() => setClearOpen(true)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -637,6 +643,24 @@ export default function StagingClientView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>대기열 초기화</AlertDialogTitle>
+            <AlertDialogDescription>
+              대기열의 미처리 단어 <strong>{totalCount}개</strong>를 모두 삭제하시겠습니까?
+              이 작업은 <strong>되돌릴 수 없습니다</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearAll} className="bg-destructive text-white hover:bg-destructive/90">
+              전체 삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ResizablePanelGroup>
   )
 }
