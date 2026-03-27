@@ -2,6 +2,8 @@
 
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+import fs from 'fs/promises'
+import path from 'path'
 
 export async function getStagingWords(searchQuery: string = '', page: number = 1) {
   const pageSize = 100
@@ -138,4 +140,69 @@ export async function importStagingWords(
   const result = await prisma.staging_words.createMany({ data })
   revalidatePath('/staging')
   return { imported: result.count }
+}
+
+export async function updateFrequenciesFromJPDB() {
+  try {
+    const filePath = path.join(process.cwd(), 'resources', 'JPDB.txt')
+    const fileContent = await fs.readFile(filePath, 'utf-8')
+    
+    // Parse JPDB.txt into a Map (term -> frequency)
+    const lines = fileContent.split('\n')
+    const frequencyMap = new Map<string, number>()
+    
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/)
+      if (parts.length >= 2) {
+        const term = parts[0]
+        const freq = parseInt(parts[1], 10)
+        if (!isNaN(freq)) {
+          // JPDB rank is what's in the file, lower is better. 
+          // We might want to invert it so higher is better, but maybe we just store the rank as frequency.
+          // Wait, the user's list is:
+          // の    1
+          // は    2
+          // ... Let's just save the number as frequency.
+          frequencyMap.set(term, freq)
+        }
+      }
+    }
+
+    // Get all unprocessed staging words
+    const stagingWords = await prisma.staging_words.findMany({
+      where: { is_processed: false },
+      select: { id: true, term: true, frequency: true },
+    })
+
+    // Filter words that need updating
+    const updates = stagingWords
+      .map((word) => ({
+        id: word.id,
+        currentFreq: word.frequency,
+        newFreq: frequencyMap.get(word.term)
+      }))
+      .filter((update): update is typeof update & { newFreq: number } => 
+        update.newFreq !== undefined && update.newFreq !== update.currentFreq
+      )
+
+    if (updates.length === 0) {
+      return { updated: 0 }
+    }
+
+    // Perform bulk update using transactions
+    const result = await prisma.$transaction(
+      updates.map((update) =>
+        prisma.staging_words.update({
+          where: { id: update.id },
+          data: { frequency: update.newFreq },
+        })
+      )
+    )
+
+    revalidatePath('/staging')
+    return { updated: result.length }
+  } catch (error) {
+    console.error('Failed to update frequencies from JPDB:', error)
+    throw new Error('JPDB 파일 읽기 또는 업데이트에 실패했습니다.')
+  }
 }

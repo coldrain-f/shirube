@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, updateFrequenciesFromJPDB } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -15,7 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, Trash2, Download, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw } from 'lucide-react'
 
 export default function StagingClientView({ 
   initialWords, 
@@ -251,6 +251,16 @@ export default function StagingClientView({
     }
   }
 
+  const handleUpdateJPDB = async () => {
+    const toastId = toast.loading('JPDB 빈도수를 업데이트 중입니다...')
+    try {
+      const result = await updateFrequenciesFromJPDB()
+      toast.success(`${result.updated}개 단어의 빈도수가 성공적으로 업데이트되었습니다.`, { id: toastId })
+    } catch (e: any) {
+      toast.error(e.message || '업데이트에 실패했습니다.', { id: toastId })
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedWord) return
@@ -336,6 +346,13 @@ export default function StagingClientView({
                 onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
               >
                 <Upload className="h-4 w-4" />
+              </button>
+              <button
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                title="JPDB 빈도수 자동 채우기"
+                onClick={handleUpdateJPDB}
+              >
+                <RefreshCw className="h-4 w-4" />
               </button>
               <Button 
                 variant="ghost" 
