@@ -152,7 +152,9 @@ export default function DictionaryClientView({
           {dictionaries.length > 0 && (
             <Select value={filterDictId} onValueChange={v => setFilterDictId(v ?? 'all')}>
               <SelectTrigger className="w-44">
-                <SelectValue placeholder="사전 필터" />
+                <span className="flex flex-1 text-left truncate">
+                  {filterDictId === 'all' ? '전체 사전' : filterDictId === 'none' ? '사전 미지정' : (dictionaries.find(d => String(d.id) === filterDictId)?.name ?? filterDictId)}
+                </span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 사전</SelectItem>
@@ -301,7 +303,11 @@ export default function DictionaryClientView({
               <Label>사전 선택</Label>
               <Select value={exportDictId} onValueChange={v => setExportDictId(v ?? exportDictId)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="사전 선택" />
+                  <span className="flex flex-1 text-left truncate">
+                    {exportDictId
+                      ? (() => { const d = dictionaries.find(x => String(x.id) === exportDictId); return d ? `${d.name} (${d._count.entries.toLocaleString()}개)` : exportDictId })()
+                      : '사전 선택'}
+                  </span>
                 </SelectTrigger>
                 <SelectContent>
                   {dictionaries.map(d => (

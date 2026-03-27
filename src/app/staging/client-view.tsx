@@ -674,7 +674,11 @@ export default function StagingClientView({
                       onValueChange={v => setSelectedDictionaryId(v === '__none__' ? undefined : Number(v))}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="사전 선택" />
+                        <span className="flex flex-1 text-left truncate">
+                          {selectedDictionaryId !== undefined
+                            ? (dictionaries.find(d => d.id === selectedDictionaryId)?.name ?? String(selectedDictionaryId))
+                            : '사전 선택 안 함'}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">사전 선택 안 함</SelectItem>

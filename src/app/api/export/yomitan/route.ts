@@ -123,6 +123,7 @@ export async function GET(request: NextRequest) {
 
       const term = new TermEntry(entry.term)
         .setReading(entry.reading)
+        .setDefinitionTags(entry.part_of_speech || '')
         .setDeinflectors(entry.part_of_speech || '')
         .setSequenceNumber(i + 1)
 
