@@ -105,17 +105,20 @@ export async function GET(request: NextRequest) {
 
     const dictionary = new Dictionary({ fileName })
 
+    // Export to temp directory first (setIndex also writes index.json there)
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shirube-yomitan-'))
+    try {
     const index = new DictionaryIndex()
       .setTitle(dictMeta.title || dictMeta.name)
       .setRevision(dictMeta.revision || new Date().toISOString().split('T')[0])
       .setFormat(3)
+      .setAuthor(dictMeta.author || 'Shirube')
+      .setDescription(dictMeta.description || dictMeta.name)
+      .setAttribution(dictMeta.url || dictMeta.name)
+      .setUrl(dictMeta.url || '')
       .setSequenced(dictMeta.sequenced ?? true)
 
-    if (dictMeta.author) index.setAuthor(dictMeta.author)
-    if (dictMeta.url) index.setUrl(dictMeta.url)
-    if (dictMeta.description) index.setDescription(dictMeta.description)
-
-    await dictionary.setIndex(index.build())
+    await dictionary.setIndex(index.build(), tmpDir)
 
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]
@@ -135,9 +138,6 @@ export async function GET(request: NextRequest) {
       await dictionary.addTerm(term.build())
     }
 
-    // Export to temp directory and read back as buffer
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'shirube-yomitan-'))
-    try {
       await dictionary.export(tmpDir)
       const zipBuffer = await fs.readFile(path.join(tmpDir, fileName))
 
