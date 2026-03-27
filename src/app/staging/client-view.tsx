@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, updateFrequenciesFromJPDB } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -252,10 +252,26 @@ export default function StagingClientView({
   }
 
   const handleUpdateJPDB = async () => {
-    const toastId = toast.loading('JPDB 빈도수를 업데이트 중입니다...')
+    const toastId = toast.loading('JPDB 업데이트 대상 계산 중...')
     try {
-      const result = await updateFrequenciesFromJPDB()
-      toast.success(`${result.updated}개 단어의 빈도수가 성공적으로 업데이트되었습니다.`, { id: toastId })
+      const updates = await getJPDBUpdatesNeeded()
+      if (updates.length === 0) {
+        toast.success('모든 단어의 빈도수가 최신 상태입니다.', { id: toastId })
+        return
+      }
+
+      const CHUNK_SIZE = 500
+      let totalUpdated = 0
+
+      for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+        const chunk = updates.slice(i, i + CHUNK_SIZE)
+        const result = await bulkUpdateFrequencies(chunk)
+        totalUpdated += result.updated
+        const progress = Math.round((totalUpdated / updates.length) * 100)
+        toast.loading(`JPDB 업데이트 처리 중... (${progress}%)`, { id: toastId })
+      }
+
+      toast.success(`${totalUpdated}개 단어의 빈도수가 성공적으로 업데이트되었습니다.`, { id: toastId })
     } catch (e: any) {
       toast.error(e.message || '업데이트에 실패했습니다.', { id: toastId })
     }

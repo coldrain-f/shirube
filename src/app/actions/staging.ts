@@ -15,7 +15,7 @@ export async function getStagingWords(searchQuery: string = '', page: number = 1
   const [words, totalCount] = await Promise.all([
     prisma.staging_words.findMany({
       where,
-      orderBy: { frequency: 'desc' },
+      orderBy: { frequency: 'asc' },
       take: pageSize,
       skip: (page - 1) * pageSize,
     }),
@@ -83,7 +83,7 @@ export async function clearAllStagingWords() {
 export async function getAllStagingWordsForExport() {
   return await prisma.staging_words.findMany({
     where: { is_processed: false },
-    orderBy: { frequency: 'desc' },
+    orderBy: { frequency: 'asc' },
     select: {
       term: true,
       reading: true,
@@ -142,7 +142,7 @@ export async function importStagingWords(
   return { imported: result.count }
 }
 
-export async function updateFrequenciesFromJPDB() {
+export async function getJPDBUpdatesNeeded() {
   try {
     const filePath = path.join(process.cwd(), 'resources', 'JPDB.txt')
     const fileContent = await fs.readFile(filePath, 'utf-8')
@@ -157,12 +157,6 @@ export async function updateFrequenciesFromJPDB() {
         const term = parts[0]
         const freq = parseInt(parts[1], 10)
         if (!isNaN(freq)) {
-          // JPDB rank is what's in the file, lower is better. 
-          // We might want to invert it so higher is better, but maybe we just store the rank as frequency.
-          // Wait, the user's list is:
-          // の    1
-          // は    2
-          // ... Let's just save the number as frequency.
           frequencyMap.set(term, freq)
         }
       }
@@ -184,25 +178,30 @@ export async function updateFrequenciesFromJPDB() {
       .filter((update): update is typeof update & { newFreq: number } => 
         update.newFreq !== undefined && update.newFreq !== update.currentFreq
       )
+      .map((update) => ({
+        id: update.id,
+        frequency: update.newFreq
+      }))
 
-    if (updates.length === 0) {
-      return { updated: 0 }
-    }
-
-    // Perform bulk update using transactions
-    const result = await prisma.$transaction(
-      updates.map((update) =>
-        prisma.staging_words.update({
-          where: { id: update.id },
-          data: { frequency: update.newFreq },
-        })
-      )
-    )
-
-    revalidatePath('/staging')
-    return { updated: result.length }
+    return updates
   } catch (error) {
-    console.error('Failed to update frequencies from JPDB:', error)
-    throw new Error('JPDB 파일 읽기 또는 업데이트에 실패했습니다.')
+    console.error('Failed to get JPDB updates needed:', error)
+    throw new Error('JPDB 파일 읽기 또는 업데이트 정보 분석에 실패했습니다.')
   }
+}
+
+export async function bulkUpdateFrequencies(updates: { id: number, frequency: number }[]) {
+  if (updates.length === 0) return { updated: 0 }
+
+  const result = await prisma.$transaction(
+    updates.map((update) =>
+      prisma.staging_words.update({
+        where: { id: update.id },
+        data: { frequency: update.frequency },
+      })
+    )
+  )
+
+  revalidatePath('/staging')
+  return { updated: result.length }
 }
