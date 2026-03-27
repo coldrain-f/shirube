@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { deleteDictionaryEntry, updateDictionaryEntry } from '@/app/actions/dictionary'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { toast } from 'sonner'
-import { Trash2, Edit } from 'lucide-react'
+import { Trash2, Edit, Download } from 'lucide-react'
 
 type DictionaryEntry = dictionary_entries & {
   dictionary?: { id: number; name: string } | null
@@ -122,10 +122,21 @@ export default function DictionaryClientView({
     }
   }
 
-  const exportUrl = (type: 'yomitan' | 'kindle') => {
-    const dictId = filterDictId !== 'all' && filterDictId !== 'none' ? filterDictId : null
-    const base = `/api/export/${type}`
-    return dictId ? `${base}?dictionaryId=${dictId}` : base
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportType, setExportType] = useState<'yomitan' | 'kindle'>('yomitan')
+  const [exportDictId, setExportDictId] = useState<string>(
+    dictionaries.length > 0 ? String(dictionaries[0].id) : ''
+  )
+
+  const openExport = (type: 'yomitan' | 'kindle') => {
+    setExportType(type)
+    setExportDialogOpen(true)
+  }
+
+  const handleExport = () => {
+    if (!exportDictId) return
+    window.open(`/api/export/${exportType}?dictionaryId=${exportDictId}`, '_blank')
+    setExportDialogOpen(false)
   }
 
   return (
@@ -160,11 +171,13 @@ export default function DictionaryClientView({
             총 {filteredEntries.length}개
           </div>
           <div className="flex gap-2 border-l pl-4">
-            <Button variant="outline" onClick={() => window.open(exportUrl('yomitan'), '_blank')}>
-              Yomitan 내보내기 (.zip)
+            <Button variant="outline" onClick={() => openExport('yomitan')}>
+              <Download className="h-4 w-4 mr-1" />
+              Yomitan 내보내기
             </Button>
-            <Button variant="outline" onClick={() => window.open(exportUrl('kindle'), '_blank')}>
-              Kindle 내보내기 (.opf)
+            <Button variant="outline" onClick={() => openExport('kindle')}>
+              <Download className="h-4 w-4 mr-1" />
+              Kindle 내보내기
             </Button>
           </div>
         </div>
@@ -267,6 +280,44 @@ export default function DictionaryClientView({
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>취소</Button>
             <Button onClick={handleEditSave} disabled={saving}>{saving ? '저장 중...' : '저장'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{exportType === 'yomitan' ? 'Yomitan' : 'Kindle'} 내보내기</DialogTitle>
+            <DialogDescription>내보낼 사전을 선택하세요.</DialogDescription>
+          </DialogHeader>
+          {dictionaries.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              등록된 사전이 없습니다.{' '}
+              <a href="/dictionaries" className="underline hover:text-foreground">사전 관리</a>에서 먼저 사전을 생성하세요.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <Label>사전 선택</Label>
+              <Select value={exportDictId} onValueChange={v => setExportDictId(v ?? exportDictId)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="사전 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dictionaries.map(d => (
+                    <SelectItem key={d.id} value={String(d.id)}>
+                      {d.name} ({d._count.entries.toLocaleString()}개)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportDialogOpen(false)}>취소</Button>
+            <Button onClick={handleExport} disabled={!exportDictId || dictionaries.length === 0}>
+              내보내기
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

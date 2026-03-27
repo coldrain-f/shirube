@@ -11,7 +11,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { createDictionary, updateDictionary, deleteDictionary } from '@/app/actions/dictionary'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 type DictionaryWithCount = {
   id: number
@@ -211,7 +212,7 @@ export default function DictionariesClientView({ initialDictionaries }: { initia
               <TableHead>Revision</TableHead>
               <TableHead>Author</TableHead>
               <TableHead className="text-right">단어 수</TableHead>
-              <TableHead className="w-[80px] text-right">관리</TableHead>
+              <TableHead className="w-[120px] text-right">관리</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -231,6 +232,19 @@ export default function DictionariesClientView({ initialDictionaries }: { initia
                   <TableCell className="text-right">{dict._count.entries.toLocaleString()}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="inline-flex items-center justify-center h-9 w-9 rounded-md hover:bg-accent hover:text-accent-foreground" title="내보내기">
+                          <Download className="h-4 w-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => window.open(`/api/export/yomitan?dictionaryId=${dict.id}`, '_blank')}>
+                            Yomitan 내보내기 (.zip)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => window.open(`/api/export/kindle?dictionaryId=${dict.id}`, '_blank')}>
+                            Kindle 내보내기 (.zip)
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <Button variant="ghost" size="icon" onClick={() => openEdit(dict)}>
                         <Pencil className="h-4 w-4" />
                       </Button>

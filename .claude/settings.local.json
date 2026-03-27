@@ -4,7 +4,9 @@
       "Bash(npx prisma:*)",
       "Bash(PRISMA_MIGRATE_SKIP_GENERATE=1 npx prisma migrate dev --name add_dictionaries_table --create-only 2>&1)",
       "Bash(npx tsc:*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(npm info:*)",
+      "Bash(npm install:*)"
     ]
   }
 }
