@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
@@ -33,7 +34,6 @@ export default function StagingClientView({
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [searchInput, setSearchInput] = useState(initialQuery)
-  const [showPreview, setShowPreview] = useState(true)
   const [isEditingPage, setIsEditingPage] = useState(false)
   const [pageInput, setPageInput] = useState(String(currentPage))
   const [importOpen, setImportOpen] = useState(false)
@@ -509,32 +509,11 @@ export default function StagingClientView({
                 </div>
                 
                 <div className="space-y-2 flex-col flex flex-1 min-h-[150px]">
-                  <div className="flex justify-between items-center">
-                    <Label htmlFor="meaning">뜻 (Meaning) <span className="text-red-500">*</span></Label>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-6 text-xs"
-                      onClick={() => setShowPreview(!showPreview)}
-                    >
-                      {showPreview ? '에디터 보기' : 'HTML 미리보기'}
-                    </Button>
-                  </div>
-                  {showPreview ? (
-                    <div 
-                      className="flex-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm overflow-y-auto"
-                      dangerouslySetInnerHTML={{ __html: formData.meaning || '<span class="text-muted-foreground">내용이 없습니다.</span>' }}
-                    />
-                  ) : (
-                    <Textarea 
-                      id="meaning" 
-                      value={formData.meaning}
-                      onChange={e => setFormData({...formData, meaning: e.target.value})}
-                      required 
-                      className="flex-1 resize-none"
-                    />
-                  )}
+                  <Label htmlFor="meaning">뜻 (Meaning) <span className="text-red-500">*</span></Label>
+                  <RichTextEditor 
+                    value={formData.meaning}
+                    onChange={(html) => setFormData({...formData, meaning: html})}
+                  />
                 </div>
                 
                 <div className="space-y-2 pb-2">
