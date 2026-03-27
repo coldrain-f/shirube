@@ -51,3 +51,15 @@ model dictionary_entries {
 
   @@unique([term, reading])
 }
+
+model yomitan_pos_reference {
+  id            Int      @id @default(autoincrement())
+  term          String   // 단어
+  reading       String   // 읽는 법 (후리가나)
+  pos_tags       String?  // UI 표시용 태그 (예: v5k, n)
+  yomitan_rules  String?  // Yomitan 파싱용 핵심 규칙 (Index 3)
+  source_dict    String   // 출처 (예: "Jitendex", "Daijisen") - Fallback 확인용
+
+  @@unique([term, reading]) // 복합 유니크 키 (빠른 검색 및 중복 방지)
+  @@index([term])           // 단어 단일 검색을 위한 인덱스
+}
