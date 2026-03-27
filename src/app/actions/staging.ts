@@ -42,16 +42,34 @@ export async function markWordProcessed(id: number) {
   revalidatePath('/staging')
 }
 
+export async function deleteStagingWord(id: number) {
+  await prisma.staging_words.delete({ where: { id } })
+  revalidatePath('/staging')
+}
+
+export async function updateStagingWord(id: number, data: {
+  term: string
+  reading?: string | null
+  meaning?: string | null
+  part_of_speech?: string | null
+}) {
+  await prisma.staging_words.update({
+    where: { id },
+    data,
+  })
+  revalidatePath('/staging')
+}
+
 export async function addWordToDictionary(data: {
   term: string
   reading: string
   meaning: string
   part_of_speech: string
-  source: string
+  dictionary_id?: number
   staging_id?: number
 }) {
-  const { staging_id, ...dictData } = data
-  
+  const { staging_id, dictionary_id, ...dictData } = data
+
   // Upsert dictionary entry based on term and reading
   await prisma.dictionary_entries.upsert({
     where: {
@@ -63,9 +81,11 @@ export async function addWordToDictionary(data: {
     update: {
       meaning: dictData.meaning,
       part_of_speech: dictData.part_of_speech,
+      ...(dictionary_id !== undefined ? { dictionary_id } : {}),
     },
     create: {
-      ...dictData
+      ...dictData,
+      ...(dictionary_id !== undefined ? { dictionary_id } : {}),
     }
   })
 

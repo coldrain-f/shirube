@@ -28,6 +28,7 @@ export default function RootLayout({
             <nav className="flex items-center gap-4 ml-6 text-sm">
               <Link href="/staging" className="text-muted-foreground hover:text-foreground">대기열 (Staging)</Link>
               <Link href="/dictionary" className="text-muted-foreground hover:text-foreground">내 사전 (Dictionary)</Link>
+              <Link href="/dictionaries" className="text-muted-foreground hover:text-foreground">사전 관리 (Dictionaries)</Link>
             </nav>
           </header>
           <main className="flex-1 overflow-hidden">

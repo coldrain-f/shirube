@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -16,20 +16,28 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil } from 'lucide-react'
 
-export default function StagingClientView({ 
-  initialWords, 
+type DictionaryOption = {
+  id: number
+  name: string
+  _count: { entries: number }
+}
+
+export default function StagingClientView({
+  initialWords,
   initialQuery = '',
   totalCount,
   currentPage,
-  pageSize
-}: { 
-  initialWords: staging_words[],
-  initialQuery?: string,
-  totalCount: number,
-  currentPage: number,
+  pageSize,
+  dictionaries = [],
+}: {
+  initialWords: staging_words[]
+  initialQuery?: string
+  totalCount: number
+  currentPage: number
   pageSize: number
+  dictionaries?: DictionaryOption[]
 }) {
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -43,6 +51,13 @@ export default function StagingClientView({
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
   const [clearOpen, setClearOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingWord, setEditingWord] = useState<staging_words | null>(null)
+  const [editFormData, setEditFormData] = useState({ term: '', reading: '', meaning: '', part_of_speech: '' })
+  const [selectedDictionaryId, setSelectedDictionaryId] = useState<number | undefined>(dictionaries[0]?.id)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState(0)
+  const [isBulkRegistering, setIsBulkRegistering] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const [formData, setFormData] = useState({
@@ -251,6 +266,90 @@ export default function StagingClientView({
     }
   }
 
+  const handleDeleteWord = async (id: number) => {
+    try {
+      await deleteStagingWord(id)
+      const newWords = words.filter(w => w.id !== id)
+      setWords(newWords)
+      setSelectedIndex(prev => Math.min(prev, newWords.length - 1))
+      toast.success('단어가 삭제되었습니다.')
+    } catch {
+      toast.error('삭제에 실패했습니다.')
+    }
+  }
+
+  const openEditDialog = (word: staging_words) => {
+    setEditingWord(word)
+    setEditFormData({
+      term: word.term,
+      reading: word.reading || '',
+      meaning: word.meaning || '',
+      part_of_speech: word.part_of_speech || '',
+    })
+    setEditOpen(true)
+  }
+
+  const handleEditSave = async () => {
+    if (!editingWord) return
+    try {
+      await updateStagingWord(editingWord.id, {
+        term: editFormData.term,
+        reading: editFormData.reading || null,
+        meaning: editFormData.meaning || null,
+        part_of_speech: editFormData.part_of_speech || null,
+      })
+      setWords(words.map(w => w.id === editingWord.id ? { ...w, ...editFormData } : w))
+      setEditOpen(false)
+      toast.success('단어가 수정되었습니다.')
+    } catch {
+      toast.error('수정에 실패했습니다.')
+    }
+  }
+
+  const handleBulkRegister = async () => {
+    const toRegister = words.filter(w => w.reading && w.meaning)
+    if (!toRegister.length) {
+      toast.error('요미가나와 뜻이 모두 입력된 단어가 없습니다.')
+      return
+    }
+    setIsBulkRegistering(true)
+    setBulkProgress(0)
+    let registered = 0
+    try {
+      for (let i = 0; i < toRegister.length; i++) {
+        const w = toRegister[i]
+        let pos = w.part_of_speech || 'n'
+        if (pos.includes('명사')) pos = 'n'
+        else if (pos.includes('형용사')) pos = 'adj-i'
+        else if (pos.includes('동사')) pos = 'v1'
+        else if (pos.includes('부사')) pos = 'adv'
+        else if (!['n','v1','v5k','v5s','v5t','v5n','v5m','v5r','v5w','v5g','v5b','vk','vs','adj-i','adj-na','adv','exp','int','prt'].includes(pos)) pos = 'n'
+
+        const rawTerm = w.term || ''
+        const parts = rawTerm.split('|')
+
+        await addWordToDictionary({
+          term: parts[0],
+          reading: w.reading!,
+          meaning: w.meaning!,
+          part_of_speech: pos,
+          dictionary_id: selectedDictionaryId,
+          staging_id: w.id,
+        })
+        registered++
+        setBulkProgress(Math.round(((i + 1) / toRegister.length) * 100))
+      }
+      toast.success(`${registered}개 단어를 사전에 등록했습니다.`)
+      setBulkOpen(false)
+      router.push(pathname)
+    } catch {
+      toast.error('일괄 등록 중 오류가 발생했습니다.')
+    } finally {
+      setIsBulkRegistering(false)
+      setBulkProgress(0)
+    }
+  }
+
   const handleUpdateJPDB = async () => {
     const toastId = toast.loading('JPDB 업데이트 대상 계산 중...')
     try {
@@ -287,8 +386,8 @@ export default function StagingClientView({
         reading: formData.reading,
         meaning: formData.meaning,
         part_of_speech: formData.part_of_speech,
-        source: selectedWord.source,
-        staging_id: selectedWord.id
+        dictionary_id: selectedDictionaryId,
+        staging_id: selectedWord.id,
       })
       
       toast.success(`${selectedWord.term} 사전에 등록되었습니다.`)
@@ -401,17 +500,33 @@ export default function StagingClientView({
               <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
             ) : (
               words.map((word, idx) => (
-                <div 
-                  key={word.id} 
+                <div
+                  key={word.id}
                   ref={(el) => { itemRefs.current[idx] = el }}
                   onClick={() => setSelectedIndex(idx)}
                   className={`p-3 border rounded-md cursor-pointer transition-colors ${
                     idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
                   }`}
                 >
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-lg">{word.term}</span>
-                    <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="font-bold text-lg flex-1 min-w-0 truncate">{word.term}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
+                      <button
+                        className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                        title="수정"
+                        onClick={(e) => { e.stopPropagation(); openEditDialog(word) }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
+                        title="삭제"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteWord(word.id) }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                   {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1">{word.part_of_speech}</div>}
                 </div>
@@ -546,7 +661,39 @@ export default function StagingClientView({
                   </Select>
                 </div>
                 
-                <Button type="submit" className="w-full mt-auto">사전에 등록</Button>
+                <div className="space-y-2">
+                  <Label>등록할 사전 <span className="text-red-500">*</span></Label>
+                  {dictionaries.length === 0 ? (
+                    <p className="text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
+                      등록된 사전이 없습니다.{' '}
+                      <a href="/dictionaries" className="underline hover:text-foreground">사전 관리</a>에서 먼저 사전을 생성하세요.
+                    </p>
+                  ) : (
+                    <Select
+                      value={selectedDictionaryId !== undefined ? String(selectedDictionaryId) : '__none__'}
+                      onValueChange={v => setSelectedDictionaryId(v === '__none__' ? undefined : Number(v))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="사전 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">사전 선택 안 함</SelectItem>
+                        {dictionaries.map(d => (
+                          <SelectItem key={d.id} value={String(d.id)}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                <div className="flex gap-2 mt-auto">
+                  <Button type="submit" className="flex-1" disabled={selectedDictionaryId === undefined}>사전에 등록</Button>
+                  <Button type="button" variant="outline" onClick={() => setBulkOpen(true)} title="현재 페이지 단어 일괄 등록" disabled={selectedDictionaryId === undefined}>
+                    일괄 등록
+                  </Button>
+                </div>
               </form>
             ) : (
               <div className="flex h-full flex-col items-center justify-center text-muted-foreground text-sm">
@@ -652,6 +799,71 @@ export default function StagingClientView({
             <Button onClick={handleImport} disabled={!importData.length || isImporting}>
               {isImporting ? `${importProgress}% 처리 중...` : `${importData.length}개 단어 불러오기`}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Register Dialog */}
+      <AlertDialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>일괄 사전 등록</AlertDialogTitle>
+            <AlertDialogDescription>
+              현재 페이지에서 요미가나와 뜻이 입력된 <strong>{words.filter(w => w.reading && w.meaning).length}개</strong> 단어를
+              {selectedDictionaryId
+                ? <> <strong>{dictionaries.find(d => d.id === selectedDictionaryId)?.name}</strong> 사전에</>
+                : ' 사전 연결 없이'
+              } 등록합니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {isBulkRegistering && (
+            <div className="space-y-1 px-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>등록 중...</span>
+                <span>{bulkProgress}%</span>
+              </div>
+              <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${bulkProgress}%` }} />
+              </div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkRegistering}>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkRegister} disabled={isBulkRegistering}>
+              {isBulkRegistering ? `${bulkProgress}% 처리 중...` : '등록'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Staging Word Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>대기열 단어 수정</DialogTitle>
+            <DialogDescription>표제어, 요미가나, 뜻, 품사를 수정합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="edit-term">표제어</Label>
+              <Input id="edit-term" value={editFormData.term} onChange={e => setEditFormData({ ...editFormData, term: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-reading">요미가나</Label>
+              <Input id="edit-reading" value={editFormData.reading} onChange={e => setEditFormData({ ...editFormData, reading: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-meaning">뜻</Label>
+              <Textarea id="edit-meaning" value={editFormData.meaning} onChange={e => setEditFormData({ ...editFormData, meaning: e.target.value })} rows={3} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-pos">품사</Label>
+              <Input id="edit-pos" value={editFormData.part_of_speech} onChange={e => setEditFormData({ ...editFormData, part_of_speech: e.target.value })} placeholder="예: n, v1, adj-i" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>취소</Button>
+            <Button onClick={handleEditSave}>저장</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

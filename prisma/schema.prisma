@@ -18,6 +18,23 @@ model staging_words {
   is_processed   Boolean @default(false)
 }
 
+model dictionaries {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  // Yomitan metadata
+  title       String?
+  revision    String?
+  sequenced   Boolean? @default(true)
+  format      Int?     @default(3)
+  author      String?
+  url         String?
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  entries dictionary_entries[]
+}
+
 model dictionary_entries {
   id             Int      @id @default(autoincrement())
   term           String
@@ -27,6 +44,8 @@ model dictionary_entries {
   pitch_accent   String?
   audio_file     String?
   tags           String?
+  dictionary_id  Int?
+  dictionary     dictionaries? @relation(fields: [dictionary_id], references: [id], onDelete: SetNull)
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
 
