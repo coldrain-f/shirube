@@ -40,6 +40,7 @@ export default function StagingClientView({
   const [importFileName, setImportFileName] = useState('')
   const [skipDuplicates, setSkipDuplicates] = useState(true)
   const [isImporting, setIsImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
   const router = useRouter()
   const pathname = usePathname()
   const [formData, setFormData] = useState({
@@ -206,11 +207,24 @@ export default function StagingClientView({
   const handleImport = useCallback(async () => {
     if (!importData.length) return
     setIsImporting(true)
+    setImportProgress(0)
+    
+    const CHUNK_SIZE = 500
+    let totalImported = 0
+    let totalSkipped = 0
+    
     try {
-      const result = await importStagingWords(importData, skipDuplicates)
-      const msg = result.skipped
-        ? `${result.imported}개 단어 추가, ${result.skipped}개 중복 건너뜀`
-        : `${result.imported}개 단어가 추가되었습니다.`
+      for (let i = 0; i < importData.length; i += CHUNK_SIZE) {
+        const chunk = importData.slice(i, i + CHUNK_SIZE)
+        const result = await importStagingWords(chunk, skipDuplicates)
+        totalImported += result.imported
+        totalSkipped += result.skipped || 0
+        setImportProgress(Math.round(((i + chunk.length) / importData.length) * 100))
+      }
+      
+      const msg = totalSkipped
+        ? `${totalImported}개 단어 추가, ${totalSkipped}개 중복 건너뜀`
+        : `${totalImported}개 단어가 추가되었습니다.`
       toast.success(msg)
       setImportOpen(false)
       setImportData([])
@@ -220,6 +234,7 @@ export default function StagingClientView({
       toast.error('불러오기에 실패했습니다.')
     } finally {
       setIsImporting(false)
+      setImportProgress(0)
     }
   }, [importData, skipDuplicates, router, pathname])
 
@@ -600,10 +615,24 @@ export default function StagingClientView({
               </>
             )}
           </div>
+          {isImporting && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>불러오는 중...</span>
+                <span>{importProgress}%</span>
+              </div>
+              <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${importProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportOpen(false)}>취소</Button>
+            <Button variant="outline" onClick={() => setImportOpen(false)} disabled={isImporting}>취소</Button>
             <Button onClick={handleImport} disabled={!importData.length || isImporting}>
-              {isImporting ? '불러오는 중...' : `${importData.length}개 단어 불러오기`}
+              {isImporting ? `${importProgress}% 처리 중...` : `${importData.length}개 단어 불러오기`}
             </Button>
           </DialogFooter>
         </DialogContent>
