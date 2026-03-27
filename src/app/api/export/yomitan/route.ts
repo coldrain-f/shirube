@@ -7,6 +7,22 @@ import os from 'os'
 import path from 'path'
 import fs from 'fs/promises'
 
+// Map our detailed POS tags to Yomitan's deinflection rule names.
+// Yomitan only recognizes: v1, v5, vk, vs, adj-i
+// v5x variants (v5k/v5s/v5t/v5n/v5m/v5r/v5w/v5g/v5b) must all be normalized to "v5"
+function posToYomitanRules(pos: string): string {
+  if (!pos) return ''
+  if (pos.startsWith('v5')) return 'v5'
+  switch (pos) {
+    case 'v1':    return 'v1'
+    case 'vk':    return 'vk'
+    case 'vs':    return 'vs'
+    case 'adj-i': return 'adj-i'
+    // adj-na, n, adv, exp, int, prt — no deinflection
+    default:      return ''
+  }
+}
+
 // Convert htmlparser2 DOM nodes to Yomitan StructuredContent nodes
 function domToStructuredContent(nodes: ChildNode[]): unknown[] {
   const result: unknown[] = []
@@ -124,10 +140,11 @@ export async function GET(request: NextRequest) {
       const entry = entries[i]
       const definition = htmlToDefinition(entry.meaning)
 
+      const pos = entry.part_of_speech || ''
       const term = new TermEntry(entry.term)
         .setReading(entry.reading)
-        .setDefinitionTags(entry.part_of_speech || '')
-        .setDeinflectors(entry.part_of_speech || '')
+        .setDefinitionTags(pos)                  // 표시용: v5r, adj-i 등 원본 유지
+        .setDeinflectors(posToYomitanRules(pos)) // 활용형 검색용: v5, v1, vk, vs, adj-i
         .setSequenceNumber(i + 1)
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
