@@ -1,18 +1,20 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { staging_words } from '@prisma/client'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { ChevronLeft, ChevronRight, Trash2, Download } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload } from 'lucide-react'
 
 export default function StagingClientView({ 
   initialWords, 
@@ -33,6 +35,11 @@ export default function StagingClientView({
   const [showPreview, setShowPreview] = useState(true)
   const [isEditingPage, setIsEditingPage] = useState(false)
   const [pageInput, setPageInput] = useState(String(currentPage))
+  const [importOpen, setImportOpen] = useState(false)
+  const [importData, setImportData] = useState<{ term: string; reading?: string | null; meaning?: string | null; frequency: number; part_of_speech?: string | null; source: string }[]>([])
+  const [importFileName, setImportFileName] = useState('')
+  const [skipDuplicates, setSkipDuplicates] = useState(true)
+  const [isImporting, setIsImporting] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const [formData, setFormData] = useState({
@@ -44,6 +51,7 @@ export default function StagingClientView({
   })
   
   const formRef = useRef<HTMLFormElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   
   // Sync words if initialWords changes (page navigation)
@@ -110,6 +118,110 @@ export default function StagingClientView({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [words.length])
+
+  const parseCSV = useCallback((text: string) => {
+    const lines = text.split('\n').filter(l => l.trim())
+    if (lines.length < 2) throw new Error('CSV 파일에 데이터가 없습니다.')
+    
+    const header = lines[0].toLowerCase()
+    if (!header.includes('term')) throw new Error('CSV 파일에 term 컬럼이 필요합니다.')
+    
+    // Parse header
+    const cols = header.split(',')
+    const idx = {
+      term: cols.indexOf('term'),
+      reading: cols.indexOf('reading'),
+      meaning: cols.indexOf('meaning'),
+      frequency: cols.indexOf('frequency'),
+      part_of_speech: cols.indexOf('part_of_speech'),
+      source: cols.indexOf('source'),
+    }
+    
+    return lines.slice(1).map(line => {
+      // Handle quoted fields (CSV with commas inside quotes)
+      const fields: string[] = []
+      let current = ''
+      let inQuotes = false
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
+          else inQuotes = !inQuotes
+        } else if (ch === ',' && !inQuotes) {
+          fields.push(current); current = ''
+        } else {
+          current += ch
+        }
+      }
+      fields.push(current)
+      
+      return {
+        term: fields[idx.term]?.trim() || '',
+        reading: idx.reading >= 0 ? fields[idx.reading]?.trim() || null : null,
+        meaning: idx.meaning >= 0 ? fields[idx.meaning]?.trim() || null : null,
+        frequency: idx.frequency >= 0 ? parseInt(fields[idx.frequency], 10) || 0 : 0,
+        part_of_speech: idx.part_of_speech >= 0 ? fields[idx.part_of_speech]?.trim() || null : null,
+        source: idx.source >= 0 ? fields[idx.source]?.trim() || 'import' : 'import',
+      }
+    }).filter(w => w.term)
+  }, [])
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    setImportFileName(file.name)
+    try {
+      const text = await file.text()
+      let parsed: typeof importData
+      
+      if (file.name.endsWith('.json')) {
+        const json = JSON.parse(text)
+        const arr = Array.isArray(json) ? json : [json]
+        parsed = arr.map((w: Record<string, unknown>) => ({
+          term: String(w.term || ''),
+          reading: w.reading ? String(w.reading) : null,
+          meaning: w.meaning ? String(w.meaning) : null,
+          frequency: Number(w.frequency) || 0,
+          part_of_speech: w.part_of_speech ? String(w.part_of_speech) : null,
+          source: String(w.source || 'import'),
+        })).filter((w: { term: string }) => w.term)
+      } else {
+        parsed = parseCSV(text)
+      }
+      
+      if (!parsed.length) {
+        toast.error('파일에서 유효한 데이터를 찾을 수 없습니다.')
+        return
+      }
+      setImportData(parsed)
+    } catch (err) {
+      toast.error(`파일 파싱 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`)
+      setImportData([])
+    }
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [parseCSV])
+
+  const handleImport = useCallback(async () => {
+    if (!importData.length) return
+    setIsImporting(true)
+    try {
+      const result = await importStagingWords(importData, skipDuplicates)
+      const msg = result.skipped
+        ? `${result.imported}개 단어 추가, ${result.skipped}개 중복 건너뜀`
+        : `${result.imported}개 단어가 추가되었습니다.`
+      toast.success(msg)
+      setImportOpen(false)
+      setImportData([])
+      setImportFileName('')
+      router.push(pathname)
+    } catch {
+      toast.error('불러오기에 실패했습니다.')
+    } finally {
+      setIsImporting(false)
+    }
+  }, [importData, skipDuplicates, router, pathname])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -190,6 +302,13 @@ export default function StagingClientView({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <button
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                title="불러오기 (CSV/JSON)"
+                onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
+              >
+                <Upload className="h-4 w-4" />
+              </button>
               <Button 
                 variant="ghost" 
                 size="icon" 
@@ -419,6 +538,76 @@ export default function StagingClientView({
           </div>
         )}
       </ResizablePanel>
+
+      {/* Import Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>대기열 데이터 불러오기</DialogTitle>
+            <DialogDescription>CSV 또는 JSON 파일을 업로드하여 대기열에 단어를 추가합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.json"
+                onChange={handleFileChange}
+                className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground file:cursor-pointer hover:file:bg-primary/90"
+              />
+            </div>
+            
+            {importData.length > 0 && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{importFileName}</span>에서 <span className="font-bold text-foreground">{importData.length}개</span> 단어를 발견했습니다.
+                </p>
+                <div className="border rounded-md overflow-hidden max-h-48 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        <th className="text-left p-2 font-medium">Term</th>
+                        <th className="text-left p-2 font-medium">Reading</th>
+                        <th className="text-right p-2 font-medium">Freq</th>
+                        <th className="text-left p-2 font-medium">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importData.slice(0, 5).map((w, i) => (
+                        <tr key={i} className="border-t">
+                          <td className="p-2 font-medium">{w.term}</td>
+                          <td className="p-2 text-muted-foreground">{w.reading || '-'}</td>
+                          <td className="p-2 text-right">{w.frequency}</td>
+                          <td className="p-2 text-muted-foreground">{w.source}</td>
+                        </tr>
+                      ))}
+                      {importData.length > 5 && (
+                        <tr className="border-t">
+                          <td colSpan={4} className="p-2 text-center text-muted-foreground text-xs">외 {importData.length - 5}개...</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox 
+                    id="skipDuplicates" 
+                    checked={skipDuplicates} 
+                    onCheckedChange={(v) => setSkipDuplicates(v === true)} 
+                  />
+                  <Label htmlFor="skipDuplicates" className="text-sm cursor-pointer">중복된 단어(term) 건너뛰기</Label>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>취소</Button>
+            <Button onClick={handleImport} disabled={!importData.length || isImporting}>
+              {isImporting ? '불러오는 중...' : `${importData.length}개 단어 불러오기`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </ResizablePanelGroup>
   )
 }

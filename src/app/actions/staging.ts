@@ -92,3 +92,50 @@ export async function getAllStagingWordsForExport() {
     }
   })
 }
+
+export async function importStagingWords(
+  words: {
+    term: string
+    reading?: string | null
+    meaning?: string | null
+    frequency: number
+    part_of_speech?: string | null
+    source: string
+  }[],
+  skipDuplicates: boolean = false
+) {
+  if (!words.length) {
+    return { imported: 0 }
+  }
+
+  const data = words.map(w => ({
+    term: w.term,
+    reading: w.reading || null,
+    meaning: w.meaning || null,
+    frequency: w.frequency || 0,
+    part_of_speech: w.part_of_speech || null,
+    source: w.source || 'import',
+    is_processed: false,
+  }))
+
+  if (skipDuplicates) {
+    // Filter out words whose term already exists in staging
+    const existingTerms = await prisma.staging_words.findMany({
+      where: { term: { in: data.map(d => d.term) }, is_processed: false },
+      select: { term: true },
+    })
+    const existingSet = new Set(existingTerms.map(e => e.term))
+    const filtered = data.filter(d => !existingSet.has(d.term))
+    if (!filtered.length) {
+      revalidatePath('/staging')
+      return { imported: 0, skipped: data.length }
+    }
+    const result = await prisma.staging_words.createMany({ data: filtered })
+    revalidatePath('/staging')
+    return { imported: result.count, skipped: data.length - filtered.length }
+  }
+
+  const result = await prisma.staging_words.createMany({ data })
+  revalidatePath('/staging')
+  return { imported: result.count }
+}
