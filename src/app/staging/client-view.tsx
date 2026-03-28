@@ -911,11 +911,11 @@ export default function StagingClientView({
               <span className="text-sm text-muted-foreground flex-1">템플릿 다운로드</span>
               <Button variant="outline" size="sm" onClick={() => {
                 const csv = 'term,reading,meaning,frequency,part_of_speech,source\n勉強,べんきょう,공부,1,v5,example'
-                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'template.csv'; a.click(); URL.revokeObjectURL(a.href)
+                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })); a.download = 'template.csv'; a.click(); URL.revokeObjectURL(a.href)
               }}>CSV</Button>
               <Button variant="outline" size="sm" onClick={() => {
                 const json = JSON.stringify([{ term: '勉強', reading: 'べんきょう', meaning: '공부', frequency: 1, part_of_speech: 'v5', source: 'example' }], null, 2)
-                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = 'template.json'; a.click(); URL.revokeObjectURL(a.href)
+                const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8;' })); a.download = 'template.json'; a.click(); URL.revokeObjectURL(a.href)
               }}>JSON</Button>
             </div>
             <div>
