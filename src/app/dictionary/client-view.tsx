@@ -52,7 +52,7 @@ function PosToggleGroup({ value, onChange }: { value: string; onChange: (v: stri
           variant="outline"
           pressed={selected.has(rule)}
           onPressedChange={() => onChange(togglePosRule(value, rule))}
-          className={cn('font-mono', selected.has(rule) && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground border-primary')}
+          className={cn('font-mono', selected.has(rule) && '!bg-primary text-primary-foreground hover:!bg-primary/90 hover:text-primary-foreground border-primary')}
         >
           {rule}
         </Toggle>
