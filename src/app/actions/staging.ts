@@ -70,24 +70,29 @@ export async function addWordToDictionary(data: {
 }) {
   const { staging_id, dictionary_id, ...dictData } = data
 
-  // Upsert dictionary entry based on term and reading
-  await prisma.dictionary_entries.upsert({
-    where: {
-      term_reading: {
-        term: dictData.term,
-        reading: dictData.reading,
-      }
-    },
-    update: {
-      meaning: dictData.meaning,
-      part_of_speech: dictData.part_of_speech,
-      ...(dictionary_id !== undefined ? { dictionary_id } : {}),
-    },
-    create: {
-      ...dictData,
-      ...(dictionary_id !== undefined ? { dictionary_id } : {}),
-    }
+  // term+reading 기준으로 기존 항목 조회 후 update, 없으면 create
+  const existing = await prisma.dictionary_entries.findFirst({
+    where: { term: dictData.term, reading: dictData.reading },
+    select: { id: true },
   })
+
+  if (existing) {
+    await prisma.dictionary_entries.update({
+      where: { id: existing.id },
+      data: {
+        meaning: dictData.meaning,
+        part_of_speech: dictData.part_of_speech,
+        ...(dictionary_id !== undefined ? { dictionary_id } : {}),
+      },
+    })
+  } else {
+    await prisma.dictionary_entries.create({
+      data: {
+        ...dictData,
+        ...(dictionary_id !== undefined ? { dictionary_id } : {}),
+      },
+    })
+  }
 
   // Mark staging as processed if it came from staging
   if (staging_id) {
