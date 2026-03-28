@@ -227,13 +227,13 @@ export async function bulkUpdateFrequencies(updates: { id: number, frequency: nu
   return { updated: result.length }
 }
 
-export async function bulkUpdatePosFromReference() {
+export async function getPosUpdatesFromReference() {
   const stagingWords = await prisma.staging_words.findMany({
     where: { is_processed: false },
     select: { id: true, term: true, reading: true },
   })
 
-  if (stagingWords.length === 0) return { updated: 0, notFound: 0 }
+  if (stagingWords.length === 0) return { updates: [], notFound: 0 }
 
   const terms = [...new Set(stagingWords.map(w => w.term))]
 
@@ -266,17 +266,17 @@ export async function bulkUpdatePosFromReference() {
     else notFound++
   }
 
-  const CHUNK_SIZE = 500
-  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
-    const chunk = updates.slice(i, i + CHUNK_SIZE)
-    await prisma.$transaction(
-      chunk.map(u => prisma.staging_words.update({
-        where: { id: u.id },
-        data: { part_of_speech: u.pos },
-      }))
-    )
-  }
+  return { updates, notFound }
+}
 
+export async function bulkApplyPosUpdates(updates: { id: number; pos: string }[]) {
+  if (updates.length === 0) return { updated: 0 }
+  const result = await prisma.$transaction(
+    updates.map(u => prisma.staging_words.update({
+      where: { id: u.id },
+      data: { part_of_speech: u.pos },
+    }))
+  )
   revalidatePath('/staging')
-  return { updated: updates.length, notFound }
+  return { updated: result.length }
 }

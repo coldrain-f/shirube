@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, bulkUpdatePosFromReference } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -386,10 +386,25 @@ export default function StagingClientView({
   }
 
   const handleBulkUpdatePos = async () => {
-    const toastId = toast.loading('품사 자동 채우기 중...')
+    const toastId = toast.loading('품사 업데이트 대상 계산 중...')
     try {
-      const result = await bulkUpdatePosFromReference()
-      toast.success(`${result.updated}개 품사 업데이트, ${result.notFound}개 미발견`, { id: toastId })
+      const { updates, notFound } = await getPosUpdatesFromReference()
+      if (updates.length === 0) {
+        toast.success(`업데이트할 단어가 없습니다. (미발견 ${notFound}개)`, { id: toastId })
+        return
+      }
+
+      const CHUNK_SIZE = 500
+      let totalUpdated = 0
+      for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+        const chunk = updates.slice(i, i + CHUNK_SIZE)
+        const result = await bulkApplyPosUpdates(chunk)
+        totalUpdated += result.updated
+        const progress = Math.round((totalUpdated / updates.length) * 100)
+        toast.loading(`품사 업데이트 중... (${progress}%)`, { id: toastId })
+      }
+
+      toast.success(`${totalUpdated}개 품사 업데이트 완료, ${notFound}개 미발견`, { id: toastId })
       router.push(pathname)
     } catch {
       toast.error('품사 자동 채우기에 실패했습니다.', { id: toastId })
