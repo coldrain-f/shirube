@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates, getAllReadyStagingWords, bulkRegisterChunkToDictionary, bulkDeleteStagingWords, getAllStagingWordIds } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates, getAllReadyStagingWords, bulkRegisterChunkToDictionary, bulkDeleteStagingWords, getAllStagingWordIds, getStagingDupExtraIds } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -118,6 +118,16 @@ export default function StagingClientView({
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
+
+  useEffect(() => {
+    if (!stagingDupFilter) return
+    getStagingDupExtraIds(searchInput, initialDictFilterId, noKanjiFilter)
+      .then(ids => {
+        setCheckedIds(new Set(ids))
+        setIsSelectingAll(false)
+      })
+      .catch(() => toast.error('중복 자동 선택에 실패했습니다.'))
+  }, [stagingDupFilter, words])
 
   const handleBulkDeleteChecked = async () => {
     if (checkedIds.size === 0) return
@@ -711,6 +721,7 @@ export default function StagingClientView({
                   router.push(buildQuery({ page: 1, stagingDup: next }))
                 }}
               >
+                <Filter className="h-3 w-3" />
                 중복 필터
               </button>
               <button
@@ -728,6 +739,7 @@ export default function StagingClientView({
                   router.push(buildQuery({ page: 1, noKanji: next }))
                 }}
               >
+                <Filter className="h-3 w-3" />
                 비한자어 필터
               </button>
             </div>
@@ -806,8 +818,8 @@ export default function StagingClientView({
                       idx === selectedIndex
                         ? 'bg-primary/10 border-primary'
                         : dupTerms.has(word.term)
-                        ? 'border-red-500 hover:bg-muted'
-                        : 'hover:bg-muted'
+                          ? 'border-red-500 hover:bg-muted'
+                          : 'hover:bg-muted'
                     )}
                   >
                     <div className="flex items-center gap-2">

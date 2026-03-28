@@ -94,6 +94,29 @@ export async function getStagingWords(
   return { words, totalCount, page, pageSize }
 }
 
+export async function getStagingDupExtraIds(
+  searchQuery: string = '',
+  dictFilterId?: number,
+  noKanji: boolean = false,
+) {
+  const searchPattern = searchQuery ? `%${searchQuery}%` : null
+  const [rows, dupTermsResult] = await Promise.all([
+    fetchBaseIdTermRows(searchPattern, dictFilterId),
+    prisma.$queryRaw<{term: string}[]>`SELECT term FROM staging_words WHERE is_processed = 0 GROUP BY term HAVING COUNT(*) > 1`,
+  ])
+  const dupTerms = new Set(dupTermsResult.map(r => r.term))
+  let filtered = rows
+  if (noKanji) filtered = filtered.filter(r => !KANJI_RE.test(r.term))
+  filtered = filtered.filter(r => dupTerms.has(r.term))
+  const seen = new Set<string>()
+  const extraIds: number[] = []
+  for (const r of filtered) {
+    if (seen.has(r.term)) extraIds.push(Number(r.id))
+    else seen.add(r.term)
+  }
+  return extraIds
+}
+
 export async function getAllStagingWordIds(
   searchQuery: string = '',
   dictFilterId?: number,
