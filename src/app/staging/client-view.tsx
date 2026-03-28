@@ -17,7 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag, BookCheck, Filter } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag, BookCheck, Filter, Plus } from 'lucide-react'
 
 const POS_RULES = ['v1', 'v5', 'vk', 'vs', 'adj-i'] as const
 const VALID_RULES = new Set(POS_RULES)
@@ -174,14 +174,24 @@ export default function StagingClientView({
     tags: ''
   })
 
+  const [addWordOpen, setAddWordOpen] = useState(false)
+  const [addWordForm, setAddWordForm] = useState({ term: '', reading: '', meaning: '', frequency: '', part_of_speech: '', source: '' })
+  const [isAddingWord, setIsAddingWord] = useState(false)
+
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const pendingIndexRef = useRef<number | null>(null)
 
   // Sync words if initialWords changes (page navigation)
   useEffect(() => {
     setWords(initialWords)
-    setSelectedIndex(0)
+    if (pendingIndexRef.current !== null) {
+      setSelectedIndex(Math.min(pendingIndexRef.current, Math.max(initialWords.length - 1, 0)))
+      pendingIndexRef.current = null
+    } else {
+      setSelectedIndex(0)
+    }
     setPageInput(String(currentPage))
   }, [initialWords, currentPage])
 
@@ -568,11 +578,37 @@ export default function StagingClientView({
 
       // Remove from local state and move to next
       const newWords = words.filter(w => w.id !== selectedWord.id)
+      const nextIndex = Math.min(selectedIndex, Math.max(newWords.length - 1, 0))
+      pendingIndexRef.current = nextIndex
       setWords(newWords)
-      setSelectedIndex(prev => Math.min(prev, newWords.length - 1))
+      setSelectedIndex(nextIndex)
     } catch (error) {
       toast.error('등록에 실패했습니다.')
       console.error(error)
+    }
+  }
+
+  const handleAddWord = async () => {
+    const term = addWordForm.term.trim()
+    if (!term) return
+    setIsAddingWord(true)
+    try {
+      await importStagingWords([{
+        term,
+        reading: addWordForm.reading.trim() || null,
+        meaning: addWordForm.meaning.trim() || null,
+        frequency: parseInt(addWordForm.frequency, 10) || 0,
+        part_of_speech: addWordForm.part_of_speech.trim() || null,
+        source: addWordForm.source.trim() || 'manual',
+      }], false)
+      toast.success(`${term} 대기열에 추가되었습니다.`)
+      setAddWordOpen(false)
+      setAddWordForm({ term: '', reading: '', meaning: '', frequency: '', part_of_speech: '', source: '' })
+      router.push(buildQuery({}))
+    } catch {
+      toast.error('단어 추가에 실패했습니다.')
+    } finally {
+      setIsAddingWord(false)
     }
   }
 
@@ -635,6 +671,13 @@ export default function StagingClientView({
                   onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
                 >
                   <Upload className="h-4 w-4" />
+                </button>
+                <button
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                  title="신규 단어 등록"
+                  onClick={() => { setAddWordOpen(true); setAddWordForm({ term: '', reading: '', meaning: '', frequency: '', part_of_speech: '', source: '' }) }}
+                >
+                  <Plus className="h-4 w-4" />
                 </button>
                 <button
                   className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
@@ -1070,6 +1113,82 @@ export default function StagingClientView({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Add New Word Dialog */}
+      <Dialog open={addWordOpen} onOpenChange={setAddWordOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>신규 단어 등록</DialogTitle>
+            <DialogDescription>대기열에 단어를 직접 추가합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="add-term">단어 <span className="text-destructive">*</span></Label>
+              <Input
+                id="add-term"
+                value={addWordForm.term}
+                onChange={e => setAddWordForm(f => ({ ...f, term: e.target.value }))}
+                placeholder="勉強"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') handleAddWord() }}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="add-reading">읽기</Label>
+              <Input
+                id="add-reading"
+                value={addWordForm.reading}
+                onChange={e => setAddWordForm(f => ({ ...f, reading: e.target.value }))}
+                placeholder="べんきょう"
+                onKeyDown={e => { if (e.key === 'Enter') handleAddWord() }}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="add-meaning">의미</Label>
+              <Input
+                id="add-meaning"
+                value={addWordForm.meaning}
+                onChange={e => setAddWordForm(f => ({ ...f, meaning: e.target.value }))}
+                placeholder="공부"
+                onKeyDown={e => { if (e.key === 'Enter') handleAddWord() }}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="add-frequency">빈도수</Label>
+                <Input
+                  id="add-frequency"
+                  type="number"
+                  value={addWordForm.frequency}
+                  onChange={e => setAddWordForm(f => ({ ...f, frequency: e.target.value }))}
+                  placeholder="0"
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddWord() }}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="add-source">출처</Label>
+                <Input
+                  id="add-source"
+                  value={addWordForm.source}
+                  onChange={e => setAddWordForm(f => ({ ...f, source: e.target.value }))}
+                  placeholder="manual"
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddWord() }}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>품사</Label>
+              <PosToggleGroup value={addWordForm.part_of_speech} onChange={v => setAddWordForm(f => ({ ...f, part_of_speech: v }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddWordOpen(false)} disabled={isAddingWord}>취소</Button>
+            <Button onClick={handleAddWord} disabled={!addWordForm.term.trim() || isAddingWord}>
+              {isAddingWord ? '추가 중...' : '추가'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Import Dialog */}
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
