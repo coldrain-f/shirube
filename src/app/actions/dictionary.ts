@@ -58,6 +58,13 @@ export async function deleteDictionaryEntry(id: number) {
   revalidatePath('/dictionary')
 }
 
+export async function bulkDeleteDictionaryEntries(ids: number[]) {
+  if (ids.length === 0) return { deleted: 0 }
+  const result = await prisma.dictionary_entries.deleteMany({ where: { id: { in: ids } } })
+  revalidatePath('/dictionary')
+  return { deleted: result.count }
+}
+
 export async function updateDictionaryEntry(id: number, data: {
   term: string
   reading: string

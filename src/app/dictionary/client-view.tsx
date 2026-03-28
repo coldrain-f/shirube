@@ -18,10 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Toggle } from '@/components/ui/toggle'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import { deleteDictionaryEntry, updateDictionaryEntry } from '@/app/actions/dictionary'
+import { Checkbox } from '@/components/ui/checkbox'
+import { deleteDictionaryEntry, updateDictionaryEntry, bulkDeleteDictionaryEntries } from '@/app/actions/dictionary'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { toast } from 'sonner'
-import { Trash2, Edit, Download, ChevronLeft, ChevronRight, Search, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react'
+import { Trash2, Edit, Download, ChevronLeft, ChevronRight, Search, ChevronsUpDown, ChevronUp, ChevronDown, Filter } from 'lucide-react'
 
 const PAGE_SIZE = 50
 
@@ -81,6 +82,9 @@ export default function DictionaryClientView({
   const [page, setPage] = useState(1)
   const [sortCol, setSortCol] = useState<'term' | 'reading' | 'part_of_speech' | 'dictionary' | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
 
   const handleSort = (col: typeof sortCol) => {
     if (sortCol === col) {
@@ -93,12 +97,29 @@ export default function DictionaryClientView({
     setPage(1)
   }
 
+  // Compute duplicate IDs: entries sharing the same term+reading+meaning
+  const duplicateIds = (() => {
+    const keyCount = new Map<string, number[]>()
+    for (const e of entries) {
+      const key = `${e.term}\t${e.reading}\t${e.meaning}`
+      const ids = keyCount.get(key) ?? []
+      ids.push(e.id)
+      keyCount.set(key, ids)
+    }
+    const result = new Set<number>()
+    for (const ids of keyCount.values()) {
+      if (ids.length > 1) ids.forEach(id => result.add(id))
+    }
+    return result
+  })()
+
   const filteredEntries = entries.filter(e => {
     const matchSearch = !search || e.term.includes(search) || e.reading.includes(search) || e.meaning.includes(search)
     const matchDict = filterDictId === 'all'
       || (filterDictId === 'none' && !e.dictionary_id)
       || (e.dictionary_id !== null && String(e.dictionary_id) === filterDictId)
-    return matchSearch && matchDict
+    const matchDuplicate = !showDuplicatesOnly || duplicateIds.has(e.id)
+    return matchSearch && matchDict && matchDuplicate
   })
 
   const sortedEntries = sortCol ? [...filteredEntries].sort((a, b) => {
@@ -121,10 +142,42 @@ export default function DictionaryClientView({
       setEntries(data)
       setHasQueried(true)
       setPage(1)
+      setSelectedIds(new Set())
     } finally {
       setIsLoading(false)
     }
   }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`선택한 ${selectedIds.size}개 항목을 삭제하시겠습니까?`)) return
+    const count = selectedIds.size
+    const ids = [...selectedIds]
+    setIsBulkDeleting(true)
+    try {
+      await bulkDeleteDictionaryEntries(ids)
+      setEntries(prev => prev.filter(e => !ids.includes(e.id)))
+      setSelectedIds(new Set())
+      toast.success(`${count}개 항목이 삭제되었습니다.`)
+    } catch (e) {
+      toast.error('일괄 삭제 실패')
+      console.error(e)
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allPageSelected = pagedEntries.length > 0 && pagedEntries.every(e => selectedIds.has(e.id))
+  const somePageSelected = pagedEntries.some(e => selectedIds.has(e.id))
 
   const handleDelete = async (id: number) => {
     if (!confirm('정말 삭제하시겠습니까?')) return
@@ -226,8 +279,34 @@ export default function DictionaryClientView({
               className="max-w-xs"
             />
           )}
+          {hasQueried && (
+            <Button
+              variant={showDuplicatesOnly ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => { setShowDuplicatesOnly(v => !v); setPage(1); setSelectedIds(new Set()) }}
+            >
+              <Filter className="h-4 w-4 mr-1" />
+              중복 필터
+              {duplicateIds.size > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-destructive text-destructive-foreground">
+                  {duplicateIds.size}
+                </span>
+              )}
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-4">
+          {selectedIds.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              선택 삭제 ({selectedIds.size})
+            </Button>
+          )}
           {hasQueried && (
             <div className="text-sm text-muted-foreground">
               총 {filteredEntries.length.toLocaleString()}개
@@ -250,6 +329,16 @@ export default function DictionaryClientView({
         <Table containerClassName="overflow-y-auto max-h-[calc(100vh-320px)]">
           <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
             <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={allPageSelected}
+                  data-state={somePageSelected && !allPageSelected ? 'indeterminate' : undefined}
+                  onCheckedChange={checked => {
+                    if (checked) setSelectedIds(prev => new Set([...prev, ...pagedEntries.map(e => e.id)]))
+                    else setSelectedIds(prev => { const next = new Set(prev); pagedEntries.forEach(e => next.delete(e.id)); return next })
+                  }}
+                />
+              </TableHead>
               {([
                 { key: 'term', label: '단어 (Term)' },
                 { key: 'reading', label: '요미가나 (Reading)' },
@@ -281,17 +370,20 @@ export default function DictionaryClientView({
           <TableBody>
             {!hasQueried ? (
               <TableRow>
-                <TableCell colSpan={dictionaries.length > 0 ? 6 : 5} className="text-center py-16 text-muted-foreground">
+                <TableCell colSpan={dictionaries.length > 0 ? 7 : 6} className="text-center py-16 text-muted-foreground">
                   사전을 선택하고 조회 버튼을 눌러주세요.
                 </TableCell>
               </TableRow>
             ) : pagedEntries.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={dictionaries.length > 0 ? 6 : 5} className="text-center py-10 text-muted-foreground">검색 결과가 없습니다.</TableCell>
+                <TableCell colSpan={dictionaries.length > 0 ? 7 : 6} className="text-center py-10 text-muted-foreground">검색 결과가 없습니다.</TableCell>
               </TableRow>
             ) : (
               pagedEntries.map(entry => (
-                <TableRow key={entry.id}>
+                <TableRow key={entry.id} data-state={selectedIds.has(entry.id) ? 'selected' : undefined}>
+                  <TableCell>
+                    <Checkbox checked={selectedIds.has(entry.id)} onCheckedChange={() => toggleSelect(entry.id)} />
+                  </TableCell>
                   <TableCell className="font-bold text-base">{entry.term}</TableCell>
                   <TableCell>{entry.reading}</TableCell>
                   <TableCell>
