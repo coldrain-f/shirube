@@ -10,12 +10,12 @@ const KANJI_RE = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/
 
 async function fetchBaseIdTermRows(searchPattern: string | null, dictFilterId?: number) {
   return searchPattern && dictFilterId !== undefined
-    ? prisma.$queryRaw<{id: number; term: string}[]>`SELECT id, term FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern} AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId}) ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
+    ? prisma.$queryRaw<{id: number; term: string; part_of_speech: string | null}[]>`SELECT id, term, part_of_speech FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern} AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId}) ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
     : searchPattern
-    ? prisma.$queryRaw<{id: number; term: string}[]>`SELECT id, term FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern} ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
+    ? prisma.$queryRaw<{id: number; term: string; part_of_speech: string | null}[]>`SELECT id, term, part_of_speech FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern} ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
     : dictFilterId !== undefined
-    ? prisma.$queryRaw<{id: number; term: string}[]>`SELECT id, term FROM staging_words WHERE is_processed = 0 AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId}) ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
-    : prisma.$queryRaw<{id: number; term: string}[]>`SELECT id, term FROM staging_words WHERE is_processed = 0 ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
+    ? prisma.$queryRaw<{id: number; term: string; part_of_speech: string | null}[]>`SELECT id, term, part_of_speech FROM staging_words WHERE is_processed = 0 AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId}) ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
+    : prisma.$queryRaw<{id: number; term: string; part_of_speech: string | null}[]>`SELECT id, term, part_of_speech FROM staging_words WHERE is_processed = 0 ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC`
 }
 
 export async function getStagingWords(
@@ -24,12 +24,13 @@ export async function getStagingWords(
   dictFilterId?: number,
   noKanji: boolean = false,
   stagingDup: boolean = false,
+  hasPos: boolean = false,
 ) {
   const pageSize = 100
   const searchPattern = searchQuery ? `%${searchQuery}%` : null
   const offset = (page - 1) * pageSize
 
-  if (noKanji || stagingDup) {
+  if (noKanji || stagingDup || hasPos) {
     const [allRows, dupTermsResult] = await Promise.all([
       fetchBaseIdTermRows(searchPattern, dictFilterId),
       stagingDup
@@ -40,6 +41,7 @@ export async function getStagingWords(
     let filtered = allRows
     if (noKanji) filtered = filtered.filter(r => !KANJI_RE.test(r.term))
     if (stagingDup) filtered = filtered.filter(r => dupTerms.has(r.term))
+    if (hasPos) filtered = filtered.filter(r => r.part_of_speech && r.part_of_speech.trim() !== '')
     const totalCount = filtered.length
     const pageIds = filtered.slice(offset, offset + pageSize).map(r => Number(r.id))
     const words = pageIds.length > 0
@@ -98,6 +100,7 @@ export async function getStagingDupExtraIds(
   searchQuery: string = '',
   dictFilterId?: number,
   noKanji: boolean = false,
+  hasPos: boolean = false,
 ) {
   const searchPattern = searchQuery ? `%${searchQuery}%` : null
   const [rows, dupTermsResult] = await Promise.all([
@@ -107,6 +110,7 @@ export async function getStagingDupExtraIds(
   const dupTerms = new Set(dupTermsResult.map(r => r.term))
   let filtered = rows
   if (noKanji) filtered = filtered.filter(r => !KANJI_RE.test(r.term))
+  if (hasPos) filtered = filtered.filter(r => r.part_of_speech && r.part_of_speech.trim() !== '')
   filtered = filtered.filter(r => dupTerms.has(r.term))
   const seen = new Set<string>()
   const extraIds: number[] = []
@@ -122,6 +126,7 @@ export async function getAllStagingWordIds(
   dictFilterId?: number,
   noKanji: boolean = false,
   stagingDup: boolean = false,
+  hasPos: boolean = false,
 ) {
   const searchPattern = searchQuery ? `%${searchQuery}%` : null
   const [rows, dupTermsResult] = await Promise.all([
@@ -134,6 +139,7 @@ export async function getAllStagingWordIds(
   let filtered = rows
   if (noKanji) filtered = filtered.filter(r => !KANJI_RE.test(r.term))
   if (stagingDup) filtered = filtered.filter(r => dupTerms.has(r.term))
+  if (hasPos) filtered = filtered.filter(r => r.part_of_speech && r.part_of_speech.trim() !== '')
   return filtered.map(r => Number(r.id))
 }
 

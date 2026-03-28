@@ -70,6 +70,7 @@ export default function StagingClientView({
   initialDictFilterId,
   initialNoKanji = false,
   initialStagingDup = false,
+  initialHasPos = false,
 }: {
   initialWords: staging_words[]
   initialQuery?: string
@@ -80,6 +81,7 @@ export default function StagingClientView({
   initialDictFilterId?: number
   initialNoKanji?: boolean
   initialStagingDup?: boolean
+  initialHasPos?: boolean
 }) {
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -109,6 +111,7 @@ export default function StagingClientView({
   const [dictFilterActive, setDictFilterActive] = useState(initialDictFilterId !== undefined)
   const [noKanjiFilter, setNoKanjiFilter] = useState(initialNoKanji)
   const [stagingDupFilter, setStagingDupFilter] = useState(initialStagingDup)
+  const [hasPosFilter, setHasPosFilter] = useState(initialHasPos)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkProgress, setBulkProgress] = useState(0)
   const [isBulkRegistering, setIsBulkRegistering] = useState(false)
@@ -121,7 +124,7 @@ export default function StagingClientView({
 
   useEffect(() => {
     if (!stagingDupFilter) return
-    getStagingDupExtraIds(searchInput, initialDictFilterId, noKanjiFilter)
+    getStagingDupExtraIds(searchInput, initialDictFilterId, noKanjiFilter, hasPosFilter)
       .then(ids => {
         setCheckedIds(new Set(ids))
         setIsSelectingAll(false)
@@ -148,16 +151,18 @@ export default function StagingClientView({
     }
   }
 
-  const buildQuery = (opts: { q?: string; page?: number; dictFilter?: number | false; noKanji?: boolean; stagingDup?: boolean }) => {
+  const buildQuery = (opts: { q?: string; page?: number; dictFilter?: number | false; noKanji?: boolean; stagingDup?: boolean; hasPos?: boolean }) => {
     const parts: string[] = []
     const q = opts.q !== undefined ? opts.q : searchInput
     const df = opts.dictFilter !== undefined ? opts.dictFilter : (dictFilterActive ? initialDictFilterId : undefined)
     const nk = opts.noKanji !== undefined ? opts.noKanji : noKanjiFilter
     const sd = opts.stagingDup !== undefined ? opts.stagingDup : stagingDupFilter
+    const hp = opts.hasPos !== undefined ? opts.hasPos : hasPosFilter
     if (q) parts.push(`q=${encodeURIComponent(q)}`)
     if (df) parts.push(`dictFilter=${df}`)
     if (nk) parts.push('noKanji=1')
     if (sd) parts.push('stagingDup=1')
+    if (hp) parts.push('hasPos=1')
     if (opts.page && opts.page > 1) parts.push(`page=${opts.page}`)
     return parts.length ? `${pathname}?${parts.join('&')}` : pathname
   }
@@ -745,6 +750,26 @@ export default function StagingClientView({
                 비한자어 필터
               </button>
             </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                className={cn(
+                  'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors',
+                  hasPosFilter
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'hover:bg-accent hover:text-accent-foreground border-border text-muted-foreground'
+                )}
+                onClick={() => {
+                  const next = !hasPosFilter
+                  setHasPosFilter(next)
+                  setCheckedIds(new Set())
+                  setIsSelectingAll(false)
+                  router.push(buildQuery({ page: 1, hasPos: next }))
+                }}
+              >
+                <Filter className="h-3 w-3" />
+                품사 필터
+              </button>
+            </div>
             <form onSubmit={(e) => {
               e.preventDefault();
               router.push(buildQuery({ q: searchInput, page: 1 }));
@@ -782,7 +807,7 @@ export default function StagingClientView({
                         if (!checked) { setIsSelectingAll(false); setCheckedIds(new Set()); return }
                         setIsSelectingAll(true)
                         try {
-                          const ids = await getAllStagingWordIds(searchInput, initialDictFilterId, noKanjiFilter, stagingDupFilter)
+                          const ids = await getAllStagingWordIds(searchInput, initialDictFilterId, noKanjiFilter, stagingDupFilter, hasPosFilter)
                           setCheckedIds(new Set(ids))
                         } catch {
                           toast.error('전체 선택에 실패했습니다.')
