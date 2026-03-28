@@ -7,16 +7,53 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, bulkUpdatePosFromReference } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Toggle } from '@/components/ui/toggle'
+import { cn } from '@/lib/utils'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag } from 'lucide-react'
+
+const POS_RULES = ['v1', 'v5', 'vk', 'vs', 'adj-i'] as const
+const VALID_RULES = new Set(POS_RULES)
+
+function isValidRules(pos: string): boolean {
+  if (!pos) return true
+  return pos.split(' ').filter(Boolean).every(r => VALID_RULES.has(r as typeof POS_RULES[number]))
+}
+
+function togglePosRule(current: string, rule: string): string {
+  const rules = new Set(current.split(' ').filter(Boolean))
+  if (rules.has(rule)) rules.delete(rule)
+  else rules.add(rule)
+  return [...rules].join(' ')
+}
+
+function PosToggleGroup({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const selected = new Set(value.split(' ').filter(Boolean))
+  return (
+    <div className="flex flex-wrap gap-1">
+      {POS_RULES.map(rule => (
+        <Toggle
+          key={rule}
+          size="sm"
+          variant="outline"
+          pressed={selected.has(rule)}
+          onPressedChange={() => onChange(togglePosRule(value, rule))}
+          className={cn('font-mono', selected.has(rule) && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground border-primary')}
+        >
+          {rule}
+        </Toggle>
+      ))}
+    </div>
+  )
+}
 
 type DictionaryOption = {
   id: number
@@ -84,15 +121,13 @@ export default function StagingClientView({
   // Focus effect to reset form & scroll to item
   useEffect(() => {
     if (selectedWord) {
-      // Auto-extract or default pos
+      // Auto-extract or default pos (Yomitan rules: v1, v5, vk, vs, adj-i, '' for non-conjugating)
       let pos = selectedWord.part_of_speech || ''
-      // Basic heuristics to map korean POS to standard tags if possible
-      if (pos.includes('명사')) pos = 'n'
-      else if (pos.includes('형용사')) pos = 'adj-i'
-      else if (pos.includes('동사')) pos = 'v1' // default
-      else if (pos.includes('부사')) pos = 'adv'
-      else if (pos.includes('감동사')) pos = 'int'
-      else pos = 'n'
+      if (!isValidRules(pos)) {
+        if (pos.includes('형용사')) pos = 'adj-i'
+        else if (pos.includes('동사')) pos = 'v1'
+        else pos = ''
+      }
 
       const rawTerm = selectedWord.term || ''
       const parts = rawTerm.split('|')
@@ -318,12 +353,12 @@ export default function StagingClientView({
     try {
       for (let i = 0; i < toRegister.length; i++) {
         const w = toRegister[i]
-        let pos = w.part_of_speech || 'n'
-        if (pos.includes('명사')) pos = 'n'
-        else if (pos.includes('형용사')) pos = 'adj-i'
-        else if (pos.includes('동사')) pos = 'v1'
-        else if (pos.includes('부사')) pos = 'adv'
-        else if (!['n','v1','v5k','v5s','v5t','v5n','v5m','v5r','v5w','v5g','v5b','vk','vs','adj-i','adj-na','adv','exp','int','prt'].includes(pos)) pos = 'n'
+        let pos = w.part_of_speech || ''
+        if (!isValidRules(pos)) {
+          if (pos.includes('형용사')) pos = 'adj-i'
+          else if (pos.includes('동사')) pos = 'v1'
+          else pos = ''
+        }
 
         const rawTerm = w.term || ''
         const parts = rawTerm.split('|')
@@ -347,6 +382,17 @@ export default function StagingClientView({
     } finally {
       setIsBulkRegistering(false)
       setBulkProgress(0)
+    }
+  }
+
+  const handleBulkUpdatePos = async () => {
+    const toastId = toast.loading('품사 자동 채우기 중...')
+    try {
+      const result = await bulkUpdatePosFromReference()
+      toast.success(`${result.updated}개 품사 업데이트, ${result.notFound}개 미발견`, { id: toastId })
+      router.push(pathname)
+    } catch {
+      toast.error('품사 자동 채우기에 실패했습니다.', { id: toastId })
     }
   }
 
@@ -461,6 +507,13 @@ export default function StagingClientView({
                 onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
               >
                 <Upload className="h-4 w-4" />
+              </button>
+              <button
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                title="품사 자동 채우기 (yomitan_pos_reference)"
+                onClick={handleBulkUpdatePos}
+              >
+                <Tag className="h-4 w-4" />
               </button>
               <button
                 className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
@@ -632,33 +685,11 @@ export default function StagingClientView({
                 </div>
                 
                 <div className="space-y-2 pb-2">
-                  <Label htmlFor="pos">품사 태그 (Part of Speech) <span className="text-red-500">*</span></Label>
-                  <Select value={formData.part_of_speech} onValueChange={(v) => setFormData({...formData, part_of_speech: v || ''})}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="품사 선택 (예: n)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="n">명사 (n)</SelectItem>
-                      <SelectItem value="v1">상하1단 동사 (v1)</SelectItem>
-                      <SelectItem value="v5k">5단 동사 -ku (v5k)</SelectItem>
-                      <SelectItem value="v5s">5단 동사 -su (v5s)</SelectItem>
-                      <SelectItem value="v5t">5단 동사 -tsu (v5t)</SelectItem>
-                      <SelectItem value="v5n">5단 동사 -nu (v5n)</SelectItem>
-                      <SelectItem value="v5m">5단 동사 -mu (v5m)</SelectItem>
-                      <SelectItem value="v5r">5단 동사 -ru (v5r)</SelectItem>
-                      <SelectItem value="v5w">5단 동사 -u (v5w)</SelectItem>
-                      <SelectItem value="v5g">5단 동사 -gu (v5g)</SelectItem>
-                      <SelectItem value="v5b">5단 동사 -bu (v5b)</SelectItem>
-                      <SelectItem value="vk">くる 동사 (vk)</SelectItem>
-                      <SelectItem value="vs">する 동사 (vs)</SelectItem>
-                      <SelectItem value="adj-i">い 형용사 (adj-i)</SelectItem>
-                      <SelectItem value="adj-na">な 형용사 (adj-na)</SelectItem>
-                      <SelectItem value="adv">부사 (adv)</SelectItem>
-                      <SelectItem value="exp">표현/숙어 (exp)</SelectItem>
-                      <SelectItem value="int">감동사 (int)</SelectItem>
-                      <SelectItem value="prt">조사 (prt)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>품사 (Yomitan rules) <span className="text-muted-foreground text-xs font-normal">— 없으면 활용 없음</span></Label>
+                  <PosToggleGroup
+                    value={formData.part_of_speech}
+                    onChange={(v) => setFormData({...formData, part_of_speech: v})}
+                  />
                 </div>
                 
                 <div className="space-y-2">
@@ -861,8 +892,11 @@ export default function StagingClientView({
               <Textarea id="edit-meaning" value={editFormData.meaning} onChange={e => setEditFormData({ ...editFormData, meaning: e.target.value })} rows={3} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="edit-pos">품사</Label>
-              <Input id="edit-pos" value={editFormData.part_of_speech} onChange={e => setEditFormData({ ...editFormData, part_of_speech: e.target.value })} placeholder="예: n, v1, adj-i" />
+              <Label>품사 (Yomitan rules)</Label>
+              <PosToggleGroup
+                value={editFormData.part_of_speech}
+                onChange={(v) => setEditFormData({ ...editFormData, part_of_speech: v })}
+              />
             </div>
           </div>
           <DialogFooter>

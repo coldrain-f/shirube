@@ -7,9 +7,9 @@ import os from 'os'
 import path from 'path'
 import fs from 'fs/promises'
 
-// Map our detailed POS tags to Yomitan's deinflection rule names.
-// Yomitan only recognizes: v1, v5, vk, vs, adj-i
-// v5x variants (v5k/v5s/v5t/v5n/v5m/v5r/v5w/v5g/v5b) must all be normalized to "v5"
+// Normalize POS to Yomitan deinflection rule names.
+// New entries already store Yomitan rules directly (v1, v5, vk, vs, adj-i, '').
+// This function handles legacy entries that stored detailed v5x variants (v5k, v5r, etc.).
 function posToYomitanRules(pos: string): string {
   if (!pos) return ''
   if (pos.startsWith('v5')) return 'v5'
@@ -18,7 +18,6 @@ function posToYomitanRules(pos: string): string {
     case 'vk':    return 'vk'
     case 'vs':    return 'vs'
     case 'adj-i': return 'adj-i'
-    // adj-na, n, adv, exp, int, prt — no deinflection
     default:      return ''
   }
 }

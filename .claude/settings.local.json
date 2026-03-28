@@ -7,7 +7,8 @@
       "Bash(npx next:*)",
       "Bash(npm info:*)",
       "Bash(npm install:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(sqlite3 prisma/dev.db \"ATTACH ''prisma/yomitan_pos_reference.db'' AS src; INSERT OR IGNORE INTO yomitan_pos_reference SELECT * FROM src.yomitan_pos_reference; DETACH src;\")"
     ]
   }
 }

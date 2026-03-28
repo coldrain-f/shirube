@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Toggle } from '@/components/ui/toggle'
+import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { deleteDictionaryEntry, updateDictionaryEntry } from '@/app/actions/dictionary'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -30,27 +32,34 @@ type DictionaryOption = {
   _count: { entries: number }
 }
 
-const POS_OPTIONS = [
-  { value: 'n', label: '명사 (n)' },
-  { value: 'v1', label: '상하1단 동사 (v1)' },
-  { value: 'v5k', label: '5단 동사 -ku (v5k)' },
-  { value: 'v5s', label: '5단 동사 -su (v5s)' },
-  { value: 'v5t', label: '5단 동사 -tsu (v5t)' },
-  { value: 'v5n', label: '5단 동사 -nu (v5n)' },
-  { value: 'v5m', label: '5단 동사 -mu (v5m)' },
-  { value: 'v5r', label: '5단 동사 -ru (v5r)' },
-  { value: 'v5w', label: '5단 동사 -u (v5w)' },
-  { value: 'v5g', label: '5단 동사 -gu (v5g)' },
-  { value: 'v5b', label: '5단 동사 -bu (v5b)' },
-  { value: 'vk', label: 'くる 동사 (vk)' },
-  { value: 'vs', label: 'する 동사 (vs)' },
-  { value: 'adj-i', label: 'い 형용사 (adj-i)' },
-  { value: 'adj-na', label: 'な 형용사 (adj-na)' },
-  { value: 'adv', label: '부사 (adv)' },
-  { value: 'exp', label: '표현/숙어 (exp)' },
-  { value: 'int', label: '감동사 (int)' },
-  { value: 'prt', label: '조사 (prt)' },
-]
+const POS_RULES = ['v1', 'v5', 'vk', 'vs', 'adj-i'] as const
+
+function togglePosRule(current: string, rule: string): string {
+  const rules = new Set(current.split(' ').filter(Boolean))
+  if (rules.has(rule)) rules.delete(rule)
+  else rules.add(rule)
+  return [...rules].join(' ')
+}
+
+function PosToggleGroup({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const selected = new Set(value.split(' ').filter(Boolean))
+  return (
+    <div className="flex flex-wrap gap-1">
+      {POS_RULES.map(rule => (
+        <Toggle
+          key={rule}
+          size="sm"
+          variant="outline"
+          pressed={selected.has(rule)}
+          onPressedChange={() => onChange(togglePosRule(value, rule))}
+          className={cn('font-mono', selected.has(rule) && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground border-primary')}
+        >
+          {rule}
+        </Toggle>
+      ))}
+    </div>
+  )
+}
 
 export default function DictionaryClientView({
   initialEntries,
@@ -256,13 +265,11 @@ export default function DictionaryClientView({
               </div>
             </div>
             <div className="space-y-1">
-              <Label>품사 <span className="text-red-500">*</span></Label>
-              <Select value={editForm.part_of_speech} onValueChange={v => setEditForm({ ...editForm, part_of_speech: v ?? editForm.part_of_speech })}>
-                <SelectTrigger><SelectValue placeholder="품사 선택" /></SelectTrigger>
-                <SelectContent>
-                  {POS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>품사 (Yomitan rules) <span className="text-muted-foreground text-xs font-normal">— 없으면 활용 없음</span></Label>
+              <PosToggleGroup
+                value={editForm.part_of_speech}
+                onChange={v => setEditForm({ ...editForm, part_of_speech: v })}
+              />
             </div>
             <div className="space-y-1">
               <Label>뜻 <span className="text-red-500">*</span></Label>

@@ -226,3 +226,57 @@ export async function bulkUpdateFrequencies(updates: { id: number, frequency: nu
   revalidatePath('/staging')
   return { updated: result.length }
 }
+
+export async function bulkUpdatePosFromReference() {
+  const stagingWords = await prisma.staging_words.findMany({
+    where: { is_processed: false },
+    select: { id: true, term: true, reading: true },
+  })
+
+  if (stagingWords.length === 0) return { updated: 0, notFound: 0 }
+
+  const terms = [...new Set(stagingWords.map(w => w.term))]
+
+  const refs = await prisma.yomitan_pos_reference.findMany({
+    where: { term: { in: terms } },
+    select: { term: true, reading: true, yomitan_rules: true },
+  })
+
+  // Build lookup maps: prefer term+reading match, fall back to term-only
+  const byTermReading = new Map<string, string>()
+  const byTerm = new Map<string, string>()
+  for (const ref of refs) {
+    const key = `${ref.term}\t${ref.reading}`
+    if (!byTermReading.has(key)) byTermReading.set(key, ref.yomitan_rules ?? '')
+    if (!byTerm.has(ref.term)) byTerm.set(ref.term, ref.yomitan_rules ?? '')
+  }
+
+  const updates: { id: number; pos: string }[] = []
+  let notFound = 0
+
+  for (const w of stagingWords) {
+    const key = `${w.term}\t${w.reading ?? ''}`
+    let pos: string | undefined
+    if (w.reading && byTermReading.has(key)) {
+      pos = byTermReading.get(key)
+    } else if (byTerm.has(w.term)) {
+      pos = byTerm.get(w.term)
+    }
+    if (pos !== undefined) updates.push({ id: w.id, pos })
+    else notFound++
+  }
+
+  const CHUNK_SIZE = 500
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE)
+    await prisma.$transaction(
+      chunk.map(u => prisma.staging_words.update({
+        where: { id: u.id },
+        data: { part_of_speech: u.pos },
+      }))
+    )
+  }
+
+  revalidatePath('/staging')
+  return { updated: updates.length, notFound }
+}
