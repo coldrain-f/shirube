@@ -232,6 +232,73 @@ export async function bulkUpdateFrequencies(updates: { id: number, frequency: nu
   return { updated: result.length }
 }
 
+export async function getAllReadyStagingWords() {
+  const words = await prisma.staging_words.findMany({
+    where: {
+      is_processed: false,
+      reading: { not: null },
+      meaning: { not: null },
+    },
+    select: { id: true, term: true, reading: true, meaning: true, part_of_speech: true },
+    orderBy: [
+      { frequency: 'asc' },
+    ],
+  })
+  return words as { id: number; term: string; reading: string; meaning: string; part_of_speech: string | null }[]
+}
+
+export async function bulkRegisterChunkToDictionary(
+  words: { id: number; term: string; reading: string; meaning: string; part_of_speech: string | null }[],
+  dictionaryId?: number
+) {
+  const VALID = new Set(['v1', 'v5', 'vk', 'vs', 'adj-i'])
+
+  const normalized = words.map(w => {
+    let pos = w.part_of_speech || ''
+    const tokens = pos.split(' ').filter(Boolean)
+    if (tokens.length > 0 && !tokens.every(t => VALID.has(t))) {
+      if (pos.includes('형용사')) pos = 'adj-i'
+      else if (pos.includes('동사')) pos = 'v1'
+      else pos = ''
+    }
+    return { ...w, part_of_speech: pos }
+  })
+
+  // 기존 항목 일괄 조회
+  const existing = await prisma.dictionary_entries.findMany({
+    where: { term: { in: normalized.map(w => w.term) } },
+    select: { id: true, term: true, reading: true },
+  })
+  const existingMap = new Map(existing.map(e => [`${e.term}\t${e.reading}`, e.id]))
+
+  const toUpdate = normalized.filter(w => existingMap.has(`${w.term}\t${w.reading}`))
+  const toCreate = normalized.filter(w => !existingMap.has(`${w.term}\t${w.reading}`))
+
+  await prisma.$transaction([
+    ...toUpdate.map(w => prisma.dictionary_entries.update({
+      where: { id: existingMap.get(`${w.term}\t${w.reading}`)! },
+      data: { meaning: w.meaning, part_of_speech: w.part_of_speech, ...(dictionaryId !== undefined ? { dictionary_id: dictionaryId } : {}) },
+    })),
+    ...(toCreate.length > 0 ? [prisma.dictionary_entries.createMany({
+      data: toCreate.map(w => ({
+        term: w.term,
+        reading: w.reading,
+        meaning: w.meaning,
+        part_of_speech: w.part_of_speech,
+        ...(dictionaryId !== undefined ? { dictionary_id: dictionaryId } : {}),
+      })),
+    })] : []),
+    ...normalized.map(w => prisma.staging_words.update({
+      where: { id: w.id },
+      data: { is_processed: true },
+    })),
+  ])
+
+  revalidatePath('/staging')
+  revalidatePath('/dictionary')
+  return { registered: normalized.length }
+}
+
 export async function getPosUpdatesFromReference() {
   const stagingWords = await prisma.staging_words.findMany({
     where: { is_processed: false },

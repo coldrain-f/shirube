@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates, getAllReadyStagingWords, bulkRegisterChunkToDictionary } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -17,7 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag, BookCheck } from 'lucide-react'
 
 const POS_RULES = ['v1', 'v5', 'vk', 'vs', 'adj-i'] as const
 const VALID_RULES = new Set(POS_RULES)
@@ -87,6 +87,10 @@ export default function StagingClientView({
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
   const [clearOpen, setClearOpen] = useState(false)
+  const [bulkAllOpen, setBulkAllOpen] = useState(false)
+  const [isBulkAllRegistering, setIsBulkAllRegistering] = useState(false)
+  const [bulkAllProgress, setBulkAllProgress] = useState(0)
+  const [bulkAllTotal, setBulkAllTotal] = useState(0)
   const [deleteWordOpen, setDeleteWordOpen] = useState(false)
   const [deleteWordTarget, setDeleteWordTarget] = useState<{ id: number; term: string } | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -351,6 +355,39 @@ export default function StagingClientView({
     }
   }
 
+  const handleBulkAllRegister = async () => {
+    setIsBulkAllRegistering(true)
+    setBulkAllProgress(0)
+    try {
+      const allWords = await getAllReadyStagingWords()
+      if (allWords.length === 0) {
+        toast.error('등록할 단어가 없습니다. (요미가나·뜻이 입력된 단어 없음)')
+        setBulkAllOpen(false)
+        return
+      }
+      setBulkAllTotal(allWords.length)
+
+      const CHUNK_SIZE = 100
+      let registered = 0
+      for (let i = 0; i < allWords.length; i += CHUNK_SIZE) {
+        const chunk = allWords.slice(i, i + CHUNK_SIZE)
+        const result = await bulkRegisterChunkToDictionary(chunk, selectedDictionaryId)
+        registered += result.registered
+        setBulkAllProgress(Math.round(((i + chunk.length) / allWords.length) * 100))
+      }
+
+      toast.success(`${registered.toLocaleString()}개 단어를 사전에 등록했습니다.`)
+      setBulkAllOpen(false)
+      router.push(pathname)
+    } catch {
+      toast.error('전체 일괄 등록 중 오류가 발생했습니다.')
+    } finally {
+      setIsBulkAllRegistering(false)
+      setBulkAllProgress(0)
+      setBulkAllTotal(0)
+    }
+  }
+
   const handleBulkRegister = async () => {
     const toRegister = words.filter(w => w.reading && w.meaning)
     if (!toRegister.length) {
@@ -532,6 +569,13 @@ export default function StagingClientView({
                 onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
               >
                 <Upload className="h-4 w-4" />
+              </button>
+              <button
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                title="전체 일괄 사전 등록"
+                onClick={() => setBulkAllOpen(true)}
+              >
+                <BookCheck className="h-4 w-4" />
               </button>
               <button
                 className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
@@ -862,6 +906,66 @@ export default function StagingClientView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk ALL Register Dialog */}
+      <AlertDialog open={bulkAllOpen} onOpenChange={setBulkAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>전체 일괄 사전 등록</AlertDialogTitle>
+            <AlertDialogDescription>
+              요미가나와 뜻이 입력된 <strong>모든 대기열 단어</strong>를{' '}
+              {selectedDictionaryId
+                ? <><strong>{dictionaries.find(d => d.id === selectedDictionaryId)?.name}</strong> 사전에</>
+                : ' 사전 연결 없이'
+              } 등록합니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3 px-1">
+            <div className="space-y-1">
+              <Label>등록할 사전</Label>
+              {dictionaries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">등록된 사전이 없습니다.</p>
+              ) : (
+                <Select
+                  value={selectedDictionaryId !== undefined ? String(selectedDictionaryId) : '__none__'}
+                  onValueChange={v => setSelectedDictionaryId(v === '__none__' ? undefined : Number(v))}
+                >
+                  <SelectTrigger>
+                    <span className="flex flex-1 text-left truncate">
+                      {selectedDictionaryId !== undefined
+                        ? (dictionaries.find(d => d.id === selectedDictionaryId)?.name ?? String(selectedDictionaryId))
+                        : '사전 선택 안 함'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">사전 선택 안 함</SelectItem>
+                    {dictionaries.map(d => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {isBulkAllRegistering && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>등록 중... ({bulkAllTotal.toLocaleString()}개)</span>
+                  <span>{bulkAllProgress}%</span>
+                </div>
+                <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                  <div className="bg-primary h-full rounded-full transition-all duration-300" style={{ width: `${bulkAllProgress}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkAllRegistering}>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkAllRegister} disabled={isBulkAllRegistering}>
+              {isBulkAllRegistering ? `${bulkAllProgress}% 처리 중...` : '전체 등록'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Bulk Register Dialog */}
       <AlertDialog open={bulkOpen} onOpenChange={setBulkOpen}>

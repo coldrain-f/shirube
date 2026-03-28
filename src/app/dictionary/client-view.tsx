@@ -78,6 +78,8 @@ export default function DictionaryClientView({
   const [editForm, setEditForm] = useState({ term: '', reading: '', meaning: '', part_of_speech: '', pitch_accent: '', tags: '' })
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(1)
+  const [isEditingPage, setIsEditingPage] = useState(false)
+  const [pageInput, setPageInput] = useState('1')
 
   const filteredEntries = entries.filter(e => {
     const matchSearch = !search || e.term.includes(search) || e.reading.includes(search) || e.meaning.includes(search)
@@ -223,8 +225,8 @@ export default function DictionaryClientView({
                   <TableCell className="font-bold text-base">{entry.term}</TableCell>
                   <TableCell>{entry.reading}</TableCell>
                   <TableCell>
-                    <span className="px-2 py-1 bg-secondary text-secondary-foreground text-xs rounded-md">
-                      {entry.part_of_speech}
+                    <span className="px-2 py-1 bg-secondary text-secondary-foreground text-xs rounded-md font-mono">
+                      {entry.part_of_speech || 'None'}
                     </span>
                   </TableCell>
                   <TableCell>
@@ -258,11 +260,38 @@ export default function DictionaryClientView({
             {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, filteredEntries.length).toLocaleString()} / {filteredEntries.length.toLocaleString()}개
           </span>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
+            <Button variant="outline" size="sm" onClick={() => { setPage(p => { setPageInput(String(p - 1)); return p - 1 }) }} disabled={page === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
+            {isEditingPage ? (
+              <input
+                type="number"
+                className="w-14 text-center text-sm border rounded-md px-1 py-0.5 tabular-nums bg-background"
+                value={pageInput}
+                min={1}
+                max={totalPages}
+                autoFocus
+                onChange={e => setPageInput(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(pageInput)
+                  if (!isNaN(n)) setPage(Math.min(Math.max(1, n), totalPages))
+                  setIsEditingPage(false)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  if (e.key === 'Escape') { setIsEditingPage(false); setPageInput(String(page)) }
+                }}
+              />
+            ) : (
+              <span
+                className="text-sm tabular-nums cursor-pointer hover:underline"
+                onClick={() => { setPageInput(String(page)); setIsEditingPage(true) }}
+                title="클릭하여 페이지 이동"
+              >
+                {page} / {totalPages}
+              </span>
+            )}
+            <Button variant="outline" size="sm" onClick={() => { setPage(p => { setPageInput(String(p + 1)); return p + 1 }) }} disabled={page === totalPages}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
