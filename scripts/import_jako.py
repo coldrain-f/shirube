@@ -16,8 +16,12 @@ import sys
 from pathlib import Path
 
 BRACKET_PATTERN = re.compile(r'^([^\[<\n]+)\[([^\]]+)\]')
-PAREN_PATTERN   = re.compile(r'\([^)]*\)')
 KANJI_RE        = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]')
+_HIRA_RE        = re.compile(r'^[\u3040-\u309f]+$')
+
+def _strip_parens(s: str) -> str:
+    """괄호 처리: 히라가나 내용(okurigana)이면 괄호만 제거, 그 외엔 내용까지 제거."""
+    return re.sub(r'\(([^)]*)\)', lambda m: m.group(1) if _HIRA_RE.match(m.group(1)) else '', s)
 NON_BR_TAG      = re.compile(r'<(?!/?br\b)[^>]+>', re.IGNORECASE)
 # 헤더 패턴: "word[bracket]<br>" 또는 "word[bracket]" (br 없을 수도 있음)
 HEADER_PATTERN  = re.compile(r'^[^\[<\n]+(?:\[[^\]]*\])?\s*(?:<br>)?', re.IGNORECASE)
@@ -43,19 +47,19 @@ def parse_entry(word: str, definition: str) -> list:
 
     m = BRACKET_PATTERN.match(definition.split('<br>')[0] if '<br>' in definition else definition)
     if not m:
-        # 괄호 없음 — idx 키 자체가 term
-        terms = [t.strip() for t in word.split('|') if t.strip()]
+        # 괄호 없음 — idx 키 자체가 term (okurigana 괄호 처리)
+        terms = [t.strip() for t in _strip_parens(word).split('|') if t.strip()]
         return [(t, t, meaning) for t in terms]
 
     prefix  = m.group(1)  # "因る|縁る" or "よる"
     bracket = m.group(2)  # "よる"      or "因る|縁る|由る"
 
-    bracket_clean    = PAREN_PATTERN.sub('', bracket)
+    bracket_clean    = _strip_parens(bracket)
     bracket_variants = [v.strip() for v in bracket_clean.split('|') if v.strip()]
 
     if any(KANJI_RE.search(v) for v in bracket_variants):
         # Pattern B: idx=reading, bracket=kanji variants
-        reading       = prefix.strip()
+        reading       = _strip_parens(prefix).strip()
         idx_terms     = [prefix.strip()]                              # hiragana idx 키
         # reading이 variant 길이 × 2 초과 → 복합어 prefix일 가능성 높음 → skip
         bracket_terms = [v for v in bracket_variants
@@ -63,8 +67,8 @@ def parse_entry(word: str, definition: str) -> list:
         all_terms     = list(dict.fromkeys(idx_terms + bracket_terms))  # 순서 유지 중복 제거
     else:
         # Pattern A: idx=kanji variants, bracket=reading
-        reading       = bracket_variants[0] if bracket_variants else prefix.strip()
-        all_terms     = [t.strip() for t in prefix.split('|') if t.strip()]
+        reading       = bracket_variants[0] if bracket_variants else _strip_parens(prefix).strip()
+        all_terms     = [t.strip() for t in _strip_parens(prefix).split('|') if t.strip()]
 
     return [(t, reading, meaning) for t in all_terms]
 

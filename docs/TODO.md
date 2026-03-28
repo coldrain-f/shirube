@@ -135,10 +135,6 @@ Kindle 사전은 `<idx:iform>` 태그에 활용형을 직접 열거해야 활용
 
 ### 🔴 높음
 
-- [ ] **JAKO 2018사전 마이그레이션**
-  - JAKO 2018 데이터를 파싱하여 `staging_words` 또는 `dictionary_entries`에 일괄 삽입
-  - 데이터 형식 확인 후 import 스크립트 작성 필요
-
 - [ ] **Yomitan term_meta_bank (빈도수 데이터) 내보내기**
   - `staging_words`의 `frequency` 값을 Yomitan term meta bank에 포함
   - Yomitan에서 단어 정렬 및 빈도 표시에 활용
@@ -168,7 +164,7 @@ Kindle 사전은 `<idx:iform>` 태그에 활용형을 직접 열거해야 활용
 
 ### 🟢 낮음
 
-- [ ] **내 사전 단어 일괄 삭제 기능**
+- [x] **내 사전 단어 일괄 삭제 기능**
   - 체크박스 선택 후 선택 항목 일괄 삭제
 
 - [ ] **사전 항목 소속 사전 변경 기능**
