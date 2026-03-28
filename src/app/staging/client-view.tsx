@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates } from '@/app/actions/staging'
 import { toast } from 'sonner'
-import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Toggle } from '@/components/ui/toggle'
@@ -88,6 +87,8 @@ export default function StagingClientView({
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
   const [clearOpen, setClearOpen] = useState(false)
+  const [deleteWordOpen, setDeleteWordOpen] = useState(false)
+  const [deleteWordTarget, setDeleteWordTarget] = useState<{ id: number; term: string } | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editingWord, setEditingWord] = useState<staging_words | null>(null)
   const [editFormData, setEditFormData] = useState({ term: '', reading: '', meaning: '', part_of_speech: '' })
@@ -301,15 +302,24 @@ export default function StagingClientView({
     }
   }
 
-  const handleDeleteWord = async (id: number) => {
+  const handleDeleteWord = (id: number, term: string) => {
+    setDeleteWordTarget({ id, term })
+    setDeleteWordOpen(true)
+  }
+
+  const handleDeleteWordConfirm = async () => {
+    if (!deleteWordTarget) return
     try {
-      await deleteStagingWord(id)
-      const newWords = words.filter(w => w.id !== id)
+      await deleteStagingWord(deleteWordTarget.id)
+      const newWords = words.filter(w => w.id !== deleteWordTarget.id)
       setWords(newWords)
       setSelectedIndex(prev => Math.min(prev, newWords.length - 1))
       toast.success('단어가 삭제되었습니다.')
     } catch {
       toast.error('삭제에 실패했습니다.')
+    } finally {
+      setDeleteWordOpen(false)
+      setDeleteWordTarget(null)
     }
   }
 
@@ -590,7 +600,7 @@ export default function StagingClientView({
                       <button
                         className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
                         title="삭제"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteWord(word.id) }}
+                        onClick={(e) => { e.stopPropagation(); handleDeleteWord(word.id, word.term) }}
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -888,12 +898,12 @@ export default function StagingClientView({
 
       {/* Edit Staging Word Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>대기열 단어 수정</DialogTitle>
             <DialogDescription>표제어, 요미가나, 뜻, 품사를 수정합니다.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-1">
             <div className="space-y-1">
               <Label htmlFor="edit-term">표제어</Label>
               <Input id="edit-term" value={editFormData.term} onChange={e => setEditFormData({ ...editFormData, term: e.target.value })} />
@@ -903,8 +913,8 @@ export default function StagingClientView({
               <Input id="edit-reading" value={editFormData.reading} onChange={e => setEditFormData({ ...editFormData, reading: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="edit-meaning">뜻</Label>
-              <Textarea id="edit-meaning" value={editFormData.meaning} onChange={e => setEditFormData({ ...editFormData, meaning: e.target.value })} rows={3} />
+              <Label>뜻</Label>
+              <RichTextEditor value={editFormData.meaning} onChange={html => setEditFormData({ ...editFormData, meaning: html })} />
             </div>
             <div className="space-y-1">
               <Label>품사 (Yomitan rules)</Label>
@@ -920,6 +930,23 @@ export default function StagingClientView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteWordOpen} onOpenChange={setDeleteWordOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>단어 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{deleteWordTarget?.term}</strong>을(를) 대기열에서 삭제하시겠습니까?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteWordConfirm} className="bg-destructive text-white hover:bg-destructive/90">
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
         <AlertDialogContent>
