@@ -68,6 +68,7 @@ export default function StagingClientView({
   pageSize,
   dictionaries = [],
   initialDictFilterId,
+  initialNoKanji = false,
 }: {
   initialWords: staging_words[]
   initialQuery?: string
@@ -76,6 +77,7 @@ export default function StagingClientView({
   pageSize: number
   dictionaries?: DictionaryOption[]
   initialDictFilterId?: number
+  initialNoKanji?: boolean
 }) {
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -100,10 +102,7 @@ export default function StagingClientView({
   const [editFormData, setEditFormData] = useState({ term: '', reading: '', meaning: '', part_of_speech: '' })
   const [selectedDictionaryId, setSelectedDictionaryId] = useState<number | undefined>(dictionaries[0]?.id)
   const [dictFilterActive, setDictFilterActive] = useState(initialDictFilterId !== undefined)
-  const [dictFilterDialogOpen, setDictFilterDialogOpen] = useState(false)
-  const [dictFilterDialogDictId, setDictFilterDialogDictId] = useState<string>(
-    initialDictFilterId ? String(initialDictFilterId) : (dictionaries[0] ? String(dictionaries[0].id) : '')
-  )
+  const [noKanjiFilter, setNoKanjiFilter] = useState(initialNoKanji)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkProgress, setBulkProgress] = useState(0)
   const [isBulkRegistering, setIsBulkRegistering] = useState(false)
@@ -133,12 +132,14 @@ export default function StagingClientView({
     }
   }
 
-  const buildQuery = (opts: { q?: string; page?: number; dictFilter?: number | false }) => {
+  const buildQuery = (opts: { q?: string; page?: number; dictFilter?: number | false; noKanji?: boolean }) => {
     const parts: string[] = []
     const q = opts.q !== undefined ? opts.q : searchInput
-    const df = opts.dictFilter !== undefined ? opts.dictFilter : (dictFilterActive ? selectedDictionaryId : undefined)
+    const df = opts.dictFilter !== undefined ? opts.dictFilter : (dictFilterActive ? initialDictFilterId : undefined)
+    const nk = opts.noKanji !== undefined ? opts.noKanji : noKanjiFilter
     if (q) parts.push(`q=${encodeURIComponent(q)}`)
     if (df) parts.push(`dictFilter=${df}`)
+    if (nk) parts.push('noKanji=1')
     if (opts.page && opts.page > 1) parts.push(`page=${opts.page}`)
     return parts.length ? `${pathname}?${parts.join('&')}` : pathname
   }
@@ -643,6 +644,26 @@ export default function StagingClientView({
               </div>
             </div>
             <div className="flex items-center gap-1.5">
+              {dictionaries.length > 0 && (
+                <Select
+                  value={selectedDictionaryId ? String(selectedDictionaryId) : 'none'}
+                  onValueChange={v => setSelectedDictionaryId(v === 'none' ? undefined : Number(v))}
+                >
+                  <SelectTrigger className="h-7 w-36 text-xs">
+                    <span className="truncate">
+                      {selectedDictionaryId
+                        ? (dictionaries.find(d => d.id === selectedDictionaryId)?.name ?? '사전 선택')
+                        : '사전 선택'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">선택 안함</SelectItem>
+                    {dictionaries.map(d => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <button
                 className={cn(
                   'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors',
@@ -651,20 +672,38 @@ export default function StagingClientView({
                     : 'hover:bg-accent hover:text-accent-foreground border-border text-muted-foreground'
                 )}
                 onClick={() => {
-                  if (dictFilterActive) {
-                    setDictFilterActive(false)
-                    setCheckedIds(new Set())
-                    setIsSelectingAll(false)
-                    router.push(buildQuery({ page: 1, dictFilter: false }))
-                  } else {
-                    setDictFilterDialogOpen(true)
+                  const next = !dictFilterActive
+                  if (next && !selectedDictionaryId) {
+                    toast.warning('먼저 사전을 선택해주세요.')
+                    return
                   }
+                  setDictFilterActive(next)
+                  setCheckedIds(new Set())
+                  setIsSelectingAll(false)
+                  router.push(buildQuery({ page: 1, dictFilter: next ? selectedDictionaryId : false }))
                 }}
               >
                 <Filter className="h-3 w-3" />
                 {dictFilterActive
-                  ? `중복 필터: ${dictionaries.find(d => String(d.id) === dictFilterDialogDictId)?.name ?? '사전'}`
+                  ? `중복 필터: ${dictionaries.find(d => d.id === initialDictFilterId)?.name ?? '사전'}`
                   : '중복 필터'}
+              </button>
+              <button
+                className={cn(
+                  'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors',
+                  noKanjiFilter
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'hover:bg-accent hover:text-accent-foreground border-border text-muted-foreground'
+                )}
+                onClick={() => {
+                  const next = !noKanjiFilter
+                  setNoKanjiFilter(next)
+                  setCheckedIds(new Set())
+                  setIsSelectingAll(false)
+                  router.push(buildQuery({ page: 1, noKanji: next }))
+                }}
+              >
+                비한자어 필터
               </button>
             </div>
             <form onSubmit={(e) => {
@@ -704,8 +743,7 @@ export default function StagingClientView({
                         if (!checked) { setIsSelectingAll(false); setCheckedIds(new Set()); return }
                         setIsSelectingAll(true)
                         try {
-                          const dictFilterId = dictFilterActive && dictFilterDialogDictId ? Number(dictFilterDialogDictId) : undefined
-                          const ids = await getAllStagingWordIds(searchInput, dictFilterId)
+                          const ids = await getAllStagingWordIds(searchInput, initialDictFilterId, noKanjiFilter)
                           setCheckedIds(new Set(ids))
                         } catch {
                           toast.error('전체 선택에 실패했습니다.')
@@ -958,46 +996,6 @@ export default function StagingClientView({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Dict Filter Dialog */}
-      <Dialog open={dictFilterDialogOpen} onOpenChange={setDictFilterDialogOpen}>
-        <DialogContent className="sm:max-w-xs">
-          <DialogHeader>
-            <DialogTitle>중복 필터</DialogTitle>
-            <DialogDescription>선택한 사전에 이미 등록된 단어만 표시합니다.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>사전 선택</Label>
-            <Select value={dictFilterDialogDictId} onValueChange={v => setDictFilterDialogDictId(v)}>
-              <SelectTrigger>
-                <span className="flex flex-1 text-left truncate">
-                  {dictionaries.find(d => String(d.id) === dictFilterDialogDictId)?.name ?? '사전 선택'}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {dictionaries.map(d => (
-                  <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDictFilterDialogOpen(false)}>취소</Button>
-            <Button
-              disabled={!dictFilterDialogDictId}
-              onClick={() => {
-                setDictFilterActive(true)
-                setDictFilterDialogOpen(false)
-                setCheckedIds(new Set())
-                setIsSelectingAll(false)
-                router.push(buildQuery({ page: 1, dictFilter: Number(dictFilterDialogDictId) }))
-              }}
-            >
-              확인
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Import Dialog */}
       <Dialog open={importOpen} onOpenChange={setImportOpen}>

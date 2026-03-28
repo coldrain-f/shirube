@@ -7,13 +7,14 @@ export const dynamic = 'force-dynamic'
 export default async function StagingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string; dictFilter?: string }>
+  searchParams: Promise<{ q?: string; page?: string; dictFilter?: string; noKanji?: string }>
 }) {
   const params = await searchParams
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1)
   const dictFilterId = params.dictFilter ? parseInt(params.dictFilter, 10) || undefined : undefined
+  const noKanji = params.noKanji === '1'
   const [{ words, totalCount, pageSize }, dictionaries] = await Promise.all([
-    getStagingWords(params.q || '', page, dictFilterId),
+    getStagingWords(params.q || '', page, dictFilterId, noKanji),
     getDictionaries(),
   ])
 
@@ -27,6 +28,7 @@ export default async function StagingPage({
         pageSize={pageSize}
         dictionaries={dictionaries}
         initialDictFilterId={dictFilterId}
+        initialNoKanji={noKanji}
       />
     </div>
   )
