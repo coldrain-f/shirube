@@ -221,7 +221,9 @@ export default function StagingClientView({
       }
 
       // Arrow Up/Down to navigate
-      if (document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
+      const activeEl = document.activeElement as HTMLElement | null
+      const isEditing = activeEl?.tagName === 'TEXTAREA' || activeEl?.tagName === 'INPUT' || !!activeEl?.closest('[contenteditable="true"]')
+      if (!isEditing) {
         if (e.key === 'ArrowDown') {
           e.preventDefault()
           setSelectedIndex(prev => Math.min(prev + 1, words.length - 1))
