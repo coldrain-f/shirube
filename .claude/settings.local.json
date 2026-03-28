@@ -8,7 +8,19 @@
       "Bash(npm info:*)",
       "Bash(npm install:*)",
       "Bash(node:*)",
-      "Bash(sqlite3 prisma/dev.db \"ATTACH ''prisma/yomitan_pos_reference.db'' AS src; INSERT OR IGNORE INTO yomitan_pos_reference SELECT * FROM src.yomitan_pos_reference; DETACH src;\")"
+      "Bash(sqlite3 prisma/dev.db \"ATTACH ''prisma/yomitan_pos_reference.db'' AS src; INSERT OR IGNORE INTO yomitan_pos_reference SELECT * FROM src.yomitan_pos_reference; DETACH src;\")",
+      "Bash(npm run:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /PID 2764 /F\")",
+      "Bash(cmd.exe /c \"tasklist /FI \\\\\"PID eq 2764\\\\\" 2>&1\")",
+      "Bash(kill 2764)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(netstat -ano)",
+      "Bash(cmd.exe /c \"netstat -ano | findstr :3000\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 2764 -Force; Write-Output 'done'\")",
+      "Bash(node -e \"require\\(''''./src/app/actions/staging.ts''''\\)\")",
+      "Bash(python:*)",
+      "Bash(python3:*)"
     ]
   }
 }

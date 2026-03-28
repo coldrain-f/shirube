@@ -115,6 +115,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: '사전을 찾을 수 없습니다.' }, { status: 404 })
     }
 
+    // Yomitan dedup: (reading + meaning)이 같은 그룹에서 kanji term이 있으면 hiragana-only term 제거
+    const KANJI_RE = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/
+    const groupMap = new Map<string, typeof entries>()
+    for (const entry of entries) {
+      const key = `${entry.reading}\0${entry.meaning}`
+      if (!groupMap.has(key)) groupMap.set(key, [])
+      groupMap.get(key)!.push(entry)
+    }
+    const dedupedEntries = Array.from(groupMap.values()).flatMap(group => {
+      const hasKanji = group.some(e => KANJI_RE.test(e.term))
+      return hasKanji ? group.filter(e => KANJI_RE.test(e.term)) : group
+    })
+
     const safeName = dictMeta.name.replace(/\s+/g, '_')
     const fileName = `${safeName}_yomitan.zip` as `${string}.zip`
 
@@ -135,8 +148,8 @@ export async function GET(request: NextRequest) {
 
     await dictionary.setIndex(index.build(), tmpDir)
 
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i]
+    for (let i = 0; i < dedupedEntries.length; i++) {
+      const entry = dedupedEntries[i]
       const definition = htmlToDefinition(entry.meaning)
 
       const pos = entry.part_of_speech || ''

@@ -139,9 +139,15 @@ export async function getAllStagingWordIds(
 
 export async function bulkDeleteStagingWords(ids: number[]) {
   if (ids.length === 0) return { deleted: 0 }
-  const result = await prisma.staging_words.deleteMany({ where: { id: { in: ids } } })
+  const CHUNK = 900
+  let deleted = 0
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK)
+    const result = await prisma.staging_words.deleteMany({ where: { id: { in: chunk } } })
+    deleted += result.count
+  }
   revalidatePath('/staging')
-  return { deleted: result.count }
+  return { deleted }
 }
 
 export async function markWordProcessed(id: number) {
