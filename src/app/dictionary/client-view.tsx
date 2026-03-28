@@ -98,19 +98,23 @@ export default function DictionaryClientView({
   }
 
   // Compute duplicate IDs: entries sharing the same term+reading+meaning
-  const duplicateIds = (() => {
-    const keyCount = new Map<string, number[]>()
+  const { duplicateIds, duplicateExtraIds } = (() => {
+    const keyMap = new Map<string, number[]>()
     for (const e of entries) {
       const key = `${e.term}\t${e.reading}\t${e.meaning}`
-      const ids = keyCount.get(key) ?? []
+      const ids = keyMap.get(key) ?? []
       ids.push(e.id)
-      keyCount.set(key, ids)
+      keyMap.set(key, ids)
     }
-    const result = new Set<number>()
-    for (const ids of keyCount.values()) {
-      if (ids.length > 1) ids.forEach(id => result.add(id))
+    const duplicateIds = new Set<number>()
+    const duplicateExtraIds = new Set<number>() // all except first per group
+    for (const ids of keyMap.values()) {
+      if (ids.length > 1) {
+        ids.forEach(id => duplicateIds.add(id))
+        ids.slice(1).forEach(id => duplicateExtraIds.add(id))
+      }
     }
-    return result
+    return { duplicateIds, duplicateExtraIds }
   })()
 
   const filteredEntries = entries.filter(e => {
@@ -283,7 +287,12 @@ export default function DictionaryClientView({
             <Button
               variant={showDuplicatesOnly ? 'default' : 'outline'}
               size="sm"
-              onClick={() => { setShowDuplicatesOnly(v => !v); setPage(1); setSelectedIds(new Set()) }}
+              onClick={() => {
+                const next = !showDuplicatesOnly
+                setShowDuplicatesOnly(next)
+                setPage(1)
+                setSelectedIds(next ? new Set(duplicateExtraIds) : new Set())
+              }}
             >
               <Filter className="h-4 w-4 mr-1" />
               중복 필터
