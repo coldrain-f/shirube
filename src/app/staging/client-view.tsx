@@ -771,13 +771,23 @@ export default function StagingClientView({
             <div className="p-4 space-y-2">
               {words.length === 0 ? (
                 <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
-              ) : (
-                words.map((word, idx) => (
+              ) : (() => {
+                const termCount = new Map<string, number>()
+                words.forEach(w => termCount.set(w.term, (termCount.get(w.term) ?? 0) + 1))
+                const dupTerms = new Set([...termCount.entries()].filter(([, c]) => c > 1).map(([t]) => t))
+                return words.map((word, idx) => (
                   <div
                     key={word.id}
                     ref={(el) => { itemRefs.current[idx] = el }}
                     onClick={() => setSelectedIndex(idx)}
-                    className={`p-3 border rounded-md cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'}`}
+                    className={cn(
+                      'p-3 border rounded-md cursor-pointer transition-colors',
+                      idx === selectedIndex
+                        ? 'bg-primary/10 border-primary'
+                        : dupTerms.has(word.term)
+                        ? 'border-red-500 hover:bg-muted'
+                        : 'hover:bg-muted'
+                    )}
                   >
                     <div className="flex items-center gap-2">
                       <Checkbox
@@ -814,7 +824,7 @@ export default function StagingClientView({
                     {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1 pl-6">{word.part_of_speech}</div>}
                   </div>
                 ))
-              )}
+              })()}
             </div>
           </div>
 
