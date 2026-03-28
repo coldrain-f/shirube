@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Toggle } from '@/components/ui/toggle'
 import { cn } from '@/lib/utils'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { deleteDictionaryEntry, updateDictionaryEntry, bulkDeleteDictionaryEntries } from '@/app/actions/dictionary'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
@@ -86,6 +87,8 @@ export default function DictionaryClientView({
   const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
 
   const handleSort = (col: typeof sortCol) => {
     if (sortCol === col) {
@@ -156,8 +159,8 @@ export default function DictionaryClientView({
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return
-    if (!confirm(`선택한 ${selectedIds.size}개 항목을 삭제하시겠습니까?`)) return
     const count = selectedIds.size
+    setBulkDeleteConfirmOpen(false)
     const ids = [...selectedIds]
     setIsBulkDeleting(true)
     try {
@@ -185,8 +188,10 @@ export default function DictionaryClientView({
   const allPageSelected = pagedEntries.length > 0 && pagedEntries.every(e => selectedIds.has(e.id))
   const somePageSelected = pagedEntries.some(e => selectedIds.has(e.id))
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('정말 삭제하시겠습니까?')) return
+  const handleDelete = async () => {
+    if (deleteConfirmId === null) return
+    const id = deleteConfirmId
+    setDeleteConfirmId(null)
     try {
       await deleteDictionaryEntry(id)
       setEntries(entries.filter(e => e.id !== id))
@@ -311,7 +316,7 @@ export default function DictionaryClientView({
             <Button
               variant="destructive"
               size="sm"
-              onClick={handleBulkDelete}
+              onClick={() => setBulkDeleteConfirmOpen(true)}
               disabled={isBulkDeleting}
             >
               <Trash2 className="h-4 w-4 mr-1" />
@@ -415,7 +420,7 @@ export default function DictionaryClientView({
                       <Button variant="ghost" size="icon" onClick={() => openEdit(entry)}>
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(entry.id)} className="text-red-500 hover:text-red-600 hover:bg-red-50">
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(entry.id)} className="text-red-500 hover:text-red-600 hover:bg-red-50">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -555,6 +560,42 @@ export default function DictionaryClientView({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Delete Confirm */}
+      <AlertDialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>선택 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              선택한 <span className="font-bold text-foreground">{selectedIds.size.toLocaleString()}개</span> 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-white hover:bg-destructive/90">
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Single Delete Confirm */}
+      <AlertDialog open={deleteConfirmId !== null} onOpenChange={open => { if (!open) setDeleteConfirmId(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>단어 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              이 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-white hover:bg-destructive/90">
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

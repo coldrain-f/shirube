@@ -110,21 +110,22 @@ export default function StagingClientView({
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   const [isSelectingAll, setIsSelectingAll] = useState(false)
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
   const handleBulkDeleteChecked = async () => {
     if (checkedIds.size === 0) return
-    if (!confirm(`선택한 ${checkedIds.size}개 단어를 삭제하시겠습니까?`)) return
     const count = checkedIds.size
     const ids = [...checkedIds]
     setIsBulkDeleting(true)
+    setBulkDeleteConfirmOpen(false)
     try {
       await bulkDeleteStagingWords(ids)
       setWords(prev => prev.filter(w => !ids.includes(w.id)))
       setCheckedIds(new Set())
       setIsSelectingAll(false)
-      toast.success(`${count}개 단어가 삭제되었습니다.`)
+      toast.success(`${count.toLocaleString()}개 단어가 삭제되었습니다.`)
     } catch {
       toast.error('일괄 삭제에 실패했습니다.')
     } finally {
@@ -718,7 +719,7 @@ export default function StagingClientView({
                   </label>
                 </div>
                 {checkedIds.size > 0 && (
-                  <Button variant="destructive" size="sm" onClick={handleBulkDeleteChecked} disabled={isBulkDeleting}>
+                  <Button variant="destructive" size="sm" onClick={() => setBulkDeleteConfirmOpen(true)} disabled={isBulkDeleting}>
                     <Trash2 className="h-3 w-3 mr-1" />
                     선택 삭제 ({checkedIds.size.toLocaleString()})
                   </Button>
@@ -939,6 +940,24 @@ export default function StagingClientView({
           </div>
         )}
       </ResizablePanel>
+
+      {/* Bulk Delete Confirm */}
+      <AlertDialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>선택 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              선택한 <span className="font-bold text-foreground">{checkedIds.size.toLocaleString()}개</span> 단어를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDeleteChecked} className="bg-destructive text-white hover:bg-destructive/90">
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dict Filter Dialog */}
       <Dialog open={dictFilterDialogOpen} onOpenChange={setDictFilterDialogOpen}>
