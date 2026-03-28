@@ -20,7 +20,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { deleteDictionaryEntry, updateDictionaryEntry } from '@/app/actions/dictionary'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { toast } from 'sonner'
-import { Trash2, Edit, Download } from 'lucide-react'
+import { Trash2, Edit, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+
+const PAGE_SIZE = 50
 
 type DictionaryEntry = dictionary_entries & {
   dictionary?: { id: number; name: string } | null
@@ -75,6 +77,7 @@ export default function DictionaryClientView({
   const [editEntry, setEditEntry] = useState<DictionaryEntry | null>(null)
   const [editForm, setEditForm] = useState({ term: '', reading: '', meaning: '', part_of_speech: '', pitch_accent: '', tags: '' })
   const [saving, setSaving] = useState(false)
+  const [page, setPage] = useState(1)
 
   const filteredEntries = entries.filter(e => {
     const matchSearch = !search || e.term.includes(search) || e.reading.includes(search) || e.meaning.includes(search)
@@ -83,6 +86,9 @@ export default function DictionaryClientView({
       || (e.dictionary_id !== null && String(e.dictionary_id) === filterDictId)
     return matchSearch && matchDict
   })
+
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE))
+  const pagedEntries = filteredEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const handleDelete = async (id: number) => {
     if (!confirm('정말 삭제하시겠습니까?')) return
@@ -155,11 +161,11 @@ export default function DictionaryClientView({
           <Input
             placeholder="단어, 요미가나, 뜻 검색..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
             className="max-w-xs"
           />
           {dictionaries.length > 0 && (
-            <Select value={filterDictId} onValueChange={v => setFilterDictId(v ?? 'all')}>
+            <Select value={filterDictId} onValueChange={v => { setFilterDictId(v ?? 'all'); setPage(1) }}>
               <SelectTrigger className="w-44">
                 <span className="flex flex-1 text-left truncate">
                   {filterDictId === 'all' ? '전체 사전' : filterDictId === 'none' ? '사전 미지정' : (dictionaries.find(d => String(d.id) === filterDictId)?.name ?? filterDictId)}
@@ -179,7 +185,7 @@ export default function DictionaryClientView({
         </div>
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted-foreground">
-            총 {filteredEntries.length}개
+            총 {filteredEntries.length.toLocaleString()}개
           </div>
           <div className="flex gap-2 border-l pl-4">
             <Button variant="outline" onClick={() => openExport('yomitan')}>
@@ -207,12 +213,12 @@ export default function DictionaryClientView({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredEntries.length === 0 ? (
+            {pagedEntries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={dictionaries.length > 0 ? 6 : 5} className="text-center py-10 text-muted-foreground">검색 결과가 없습니다.</TableCell>
               </TableRow>
             ) : (
-              filteredEntries.map(entry => (
+              pagedEntries.map(entry => (
                 <TableRow key={entry.id}>
                   <TableCell className="font-bold text-base">{entry.term}</TableCell>
                   <TableCell>{entry.reading}</TableCell>
@@ -245,6 +251,23 @@ export default function DictionaryClientView({
           </TableBody>
         </Table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1">
+          <span className="text-sm text-muted-foreground">
+            {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, filteredEntries.length).toLocaleString()} / {filteredEntries.length.toLocaleString()}개
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

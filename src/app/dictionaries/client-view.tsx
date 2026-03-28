@@ -11,7 +11,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { createDictionary, updateDictionary, deleteDictionary } from '@/app/actions/dictionary'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+
+const PAGE_SIZE = 20
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 type DictionaryWithCount = {
@@ -48,6 +50,10 @@ export default function DictionariesClientView({ initialDictionaries }: { initia
   const [targetId, setTargetId] = useState<number | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [page, setPage] = useState(1)
+
+  const totalPages = Math.max(1, Math.ceil(dictionaries.length / PAGE_SIZE))
+  const pagedDictionaries = dictionaries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const openCreate = () => {
     setForm(EMPTY_FORM)
@@ -216,14 +222,14 @@ export default function DictionariesClientView({ initialDictionaries }: { initia
             </TableRow>
           </TableHeader>
           <TableBody>
-            {dictionaries.length === 0 ? (
+            {pagedDictionaries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                   등록된 사전이 없습니다. 새 사전을 추가해주세요.
                 </TableCell>
               </TableRow>
             ) : (
-              dictionaries.map(dict => (
+              pagedDictionaries.map(dict => (
                 <TableRow key={dict.id}>
                   <TableCell className="font-medium">{dict.name}</TableCell>
                   <TableCell className="text-muted-foreground">{dict.title || '-'}</TableCell>
@@ -259,6 +265,23 @@ export default function DictionariesClientView({ initialDictionaries }: { initia
           </TableBody>
         </Table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1">
+          <span className="text-sm text-muted-foreground">
+            총 {dictionaries.length}개
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm tabular-nums">{page} / {totalPages}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
