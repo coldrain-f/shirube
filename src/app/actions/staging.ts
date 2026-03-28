@@ -55,6 +55,27 @@ export async function getStagingWords(searchQuery: string = '', page: number = 1
   return { words, totalCount, page, pageSize }
 }
 
+export async function getAllStagingWordIds(searchQuery: string = '', dictFilterId?: number) {
+  const searchPattern = searchQuery ? `%${searchQuery}%` : null
+  const rows = await (
+    searchPattern && dictFilterId !== undefined
+      ? prisma.$queryRaw<{id: number}[]>`SELECT id FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern} AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId})`
+      : searchPattern
+      ? prisma.$queryRaw<{id: number}[]>`SELECT id FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern}`
+      : dictFilterId !== undefined
+      ? prisma.$queryRaw<{id: number}[]>`SELECT id FROM staging_words WHERE is_processed = 0 AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId})`
+      : prisma.$queryRaw<{id: number}[]>`SELECT id FROM staging_words WHERE is_processed = 0`
+  )
+  return rows.map(r => Number(r.id))
+}
+
+export async function bulkDeleteStagingWords(ids: number[]) {
+  if (ids.length === 0) return { deleted: 0 }
+  const result = await prisma.staging_words.deleteMany({ where: { id: { in: ids } } })
+  revalidatePath('/staging')
+  return { deleted: result.count }
+}
+
 export async function markWordProcessed(id: number) {
   await prisma.staging_words.update({
     where: { id },

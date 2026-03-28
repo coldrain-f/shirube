@@ -7,7 +7,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates, getAllReadyStagingWords, bulkRegisterChunkToDictionary } from '@/app/actions/staging'
+import { addWordToDictionary, clearAllStagingWords, getAllStagingWordsForExport, importStagingWords, getJPDBUpdatesNeeded, bulkUpdateFrequencies, deleteStagingWord, updateStagingWord, getPosUpdatesFromReference, bulkApplyPosUpdates, getAllReadyStagingWords, bulkRegisterChunkToDictionary, bulkDeleteStagingWords, getAllStagingWordIds } from '@/app/actions/staging'
 import { toast } from 'sonner'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -107,8 +107,30 @@ export default function StagingClientView({
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkProgress, setBulkProgress] = useState(0)
   const [isBulkRegistering, setIsBulkRegistering] = useState(false)
+  const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [isSelectingAll, setIsSelectingAll] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
+
+  const handleBulkDeleteChecked = async () => {
+    if (checkedIds.size === 0) return
+    if (!confirm(`선택한 ${checkedIds.size}개 단어를 삭제하시겠습니까?`)) return
+    const count = checkedIds.size
+    const ids = [...checkedIds]
+    setIsBulkDeleting(true)
+    try {
+      await bulkDeleteStagingWords(ids)
+      setWords(prev => prev.filter(w => !ids.includes(w.id)))
+      setCheckedIds(new Set())
+      setIsSelectingAll(false)
+      toast.success(`${count}개 단어가 삭제되었습니다.`)
+    } catch {
+      toast.error('일괄 삭제에 실패했습니다.')
+    } finally {
+      setIsBulkDeleting(false)
+    }
+  }
 
   const buildQuery = (opts: { q?: string; page?: number; dictFilter?: number | false }) => {
     const parts: string[] = []
@@ -630,6 +652,8 @@ export default function StagingClientView({
                 onClick={() => {
                   if (dictFilterActive) {
                     setDictFilterActive(false)
+                    setCheckedIds(new Set())
+                    setIsSelectingAll(false)
                     router.push(buildQuery({ page: 1, dictFilter: false }))
                   } else {
                     setDictFilterDialogOpen(true)
@@ -657,6 +681,50 @@ export default function StagingClientView({
 
           {/* 단어 리스트 — 스크롤 영역 */}
           <div className="flex-1 min-h-0 overflow-y-auto">
+            {words.length > 0 && (
+              <div className="sticky top-0 z-10 bg-background border-b px-4 py-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <Checkbox
+                      checked={!isSelectingAll && words.length > 0 && words.every(w => checkedIds.has(w.id))}
+                      data-state={!isSelectingAll && words.some(w => checkedIds.has(w.id)) && !words.every(w => checkedIds.has(w.id)) ? 'indeterminate' : undefined}
+                      disabled={isSelectingAll}
+                      onCheckedChange={checked => {
+                        if (checked) setCheckedIds(prev => new Set([...prev, ...words.map(w => w.id)]))
+                        else setCheckedIds(prev => { const next = new Set(prev); words.forEach(w => next.delete(w.id)); return next })
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">현재 페이지</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <Checkbox
+                      checked={isSelectingAll}
+                      onCheckedChange={async checked => {
+                        if (!checked) { setIsSelectingAll(false); setCheckedIds(new Set()); return }
+                        setIsSelectingAll(true)
+                        try {
+                          const dictFilterId = dictFilterActive && dictFilterDialogDictId ? Number(dictFilterDialogDictId) : undefined
+                          const ids = await getAllStagingWordIds(searchInput, dictFilterId)
+                          setCheckedIds(new Set(ids))
+                        } catch {
+                          toast.error('전체 선택에 실패했습니다.')
+                          setIsSelectingAll(false)
+                        }
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {isSelectingAll ? `전체 ${checkedIds.size.toLocaleString()}개 선택됨` : '전체 선택'}
+                    </span>
+                  </label>
+                </div>
+                {checkedIds.size > 0 && (
+                  <Button variant="destructive" size="sm" onClick={handleBulkDeleteChecked} disabled={isBulkDeleting}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    선택 삭제 ({checkedIds.size.toLocaleString()})
+                  </Button>
+                )}
+              </div>
+            )}
             <div className="p-4 space-y-2">
               {words.length === 0 ? (
                 <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
@@ -666,10 +734,21 @@ export default function StagingClientView({
                     key={word.id}
                     ref={(el) => { itemRefs.current[idx] = el }}
                     onClick={() => setSelectedIndex(idx)}
-                    className={`p-3 border rounded-md cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
-                      }`}
+                    className={`p-3 border rounded-md cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'}`}
                   >
-                    <div className="flex justify-between items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={checkedIds.has(word.id)}
+                        onCheckedChange={() => {
+                          setCheckedIds(prev => {
+                            const next = new Set(prev)
+                            if (next.has(word.id)) next.delete(word.id)
+                            else next.add(word.id)
+                            return next
+                          })
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      />
                       <span className="font-bold text-lg flex-1 min-w-0 truncate">{word.term}</span>
                       <div className="flex items-center gap-1 shrink-0">
                         <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
@@ -689,7 +768,7 @@ export default function StagingClientView({
                         </button>
                       </div>
                     </div>
-                    {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1">{word.part_of_speech}</div>}
+                    {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1 pl-6">{word.part_of_speech}</div>}
                   </div>
                 ))
               )}
@@ -890,6 +969,8 @@ export default function StagingClientView({
               onClick={() => {
                 setDictFilterActive(true)
                 setDictFilterDialogOpen(false)
+                setCheckedIds(new Set())
+                setIsSelectingAll(false)
                 router.push(buildQuery({ page: 1, dictFilter: Number(dictFilterDialogDictId) }))
               }}
             >
