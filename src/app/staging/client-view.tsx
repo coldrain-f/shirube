@@ -17,7 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag, BookCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Trash2, Download, Upload, RefreshCw, Pencil, Tag, BookCheck, Filter } from 'lucide-react'
 
 const POS_RULES = ['v1', 'v5', 'vk', 'vs', 'adj-i'] as const
 const VALID_RULES = new Set(POS_RULES)
@@ -67,6 +67,7 @@ export default function StagingClientView({
   currentPage,
   pageSize,
   dictionaries = [],
+  initialDictFilterId,
 }: {
   initialWords: staging_words[]
   initialQuery?: string
@@ -74,6 +75,7 @@ export default function StagingClientView({
   currentPage: number
   pageSize: number
   dictionaries?: DictionaryOption[]
+  initialDictFilterId?: number
 }) {
   const [words, setWords] = useState<staging_words[]>(initialWords)
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -97,11 +99,26 @@ export default function StagingClientView({
   const [editingWord, setEditingWord] = useState<staging_words | null>(null)
   const [editFormData, setEditFormData] = useState({ term: '', reading: '', meaning: '', part_of_speech: '' })
   const [selectedDictionaryId, setSelectedDictionaryId] = useState<number | undefined>(dictionaries[0]?.id)
+  const [dictFilterActive, setDictFilterActive] = useState(initialDictFilterId !== undefined)
+  const [dictFilterDialogOpen, setDictFilterDialogOpen] = useState(false)
+  const [dictFilterDialogDictId, setDictFilterDialogDictId] = useState<string>(
+    initialDictFilterId ? String(initialDictFilterId) : (dictionaries[0] ? String(dictionaries[0].id) : '')
+  )
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkProgress, setBulkProgress] = useState(0)
   const [isBulkRegistering, setIsBulkRegistering] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
+
+  const buildQuery = (opts: { q?: string; page?: number; dictFilter?: number | false }) => {
+    const parts: string[] = []
+    const q = opts.q !== undefined ? opts.q : searchInput
+    const df = opts.dictFilter !== undefined ? opts.dictFilter : (dictFilterActive ? selectedDictionaryId : undefined)
+    if (q) parts.push(`q=${encodeURIComponent(q)}`)
+    if (df) parts.push(`dictFilter=${df}`)
+    if (opts.page && opts.page > 1) parts.push(`page=${opts.page}`)
+    return parts.length ? `${pathname}?${parts.join('&')}` : pathname
+  }
   const [formData, setFormData] = useState({
     term: '',
     reading: '',
@@ -109,11 +126,11 @@ export default function StagingClientView({
     part_of_speech: '',
     tags: ''
   })
-  
+
   const formRef = useRef<HTMLFormElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
-  
+
   // Sync words if initialWords changes (page navigation)
   useEffect(() => {
     setWords(initialWords)
@@ -136,7 +153,7 @@ export default function StagingClientView({
 
       const rawTerm = selectedWord.term || ''
       const parts = rawTerm.split('|')
-      
+
       setFormData({
         term: parts[0],
         reading: selectedWord.reading || '',
@@ -144,7 +161,7 @@ export default function StagingClientView({
         part_of_speech: pos,
         tags: parts.length > 1 ? parts.slice(1).join(', ') : ''
       })
-      
+
       // Auto scroll to selected item
       itemRefs.current[selectedIndex]?.scrollIntoView({
         behavior: 'smooth',
@@ -160,7 +177,7 @@ export default function StagingClientView({
         e.preventDefault()
         formRef.current?.requestSubmit()
       }
-      
+
       // Arrow Up/Down to navigate
       if (document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
         if (e.key === 'ArrowDown') {
@@ -172,7 +189,7 @@ export default function StagingClientView({
         }
       }
     }
-    
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [words.length])
@@ -180,10 +197,10 @@ export default function StagingClientView({
   const parseCSV = useCallback((text: string) => {
     const lines = text.split('\n').filter(l => l.trim())
     if (lines.length < 2) throw new Error('CSV 파일에 데이터가 없습니다.')
-    
+
     const header = lines[0].toLowerCase()
     if (!header.includes('term')) throw new Error('CSV 파일에 term 컬럼이 필요합니다.')
-    
+
     // Parse header
     const cols = header.split(',')
     const idx = {
@@ -194,7 +211,7 @@ export default function StagingClientView({
       part_of_speech: cols.indexOf('part_of_speech'),
       source: cols.indexOf('source'),
     }
-    
+
     return lines.slice(1).map(line => {
       // Handle quoted fields (CSV with commas inside quotes)
       const fields: string[] = []
@@ -212,7 +229,7 @@ export default function StagingClientView({
         }
       }
       fields.push(current)
-      
+
       return {
         term: fields[idx.term]?.trim() || '',
         reading: idx.reading >= 0 ? fields[idx.reading]?.trim() || null : null,
@@ -227,12 +244,12 @@ export default function StagingClientView({
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    
+
     setImportFileName(file.name)
     try {
       const text = await file.text()
       let parsed: typeof importData
-      
+
       if (file.name.endsWith('.json')) {
         const json = JSON.parse(text)
         const arr = Array.isArray(json) ? json : [json]
@@ -247,7 +264,7 @@ export default function StagingClientView({
       } else {
         parsed = parseCSV(text)
       }
-      
+
       if (!parsed.length) {
         toast.error('파일에서 유효한 데이터를 찾을 수 없습니다.')
         return
@@ -265,11 +282,11 @@ export default function StagingClientView({
     if (!importData.length) return
     setIsImporting(true)
     setImportProgress(0)
-    
+
     const CHUNK_SIZE = 500
     let totalImported = 0
     let totalSkipped = 0
-    
+
     try {
       for (let i = 0; i < importData.length; i += CHUNK_SIZE) {
         const chunk = importData.slice(i, i + CHUNK_SIZE)
@@ -278,7 +295,7 @@ export default function StagingClientView({
         totalSkipped += result.skipped || 0
         setImportProgress(Math.round(((i + chunk.length) / importData.length) * 100))
       }
-      
+
       const msg = totalSkipped
         ? `${totalImported}개 단어 추가, ${totalSkipped}개 중복 건너뜀`
         : `${totalImported}개 단어가 추가되었습니다.`
@@ -301,8 +318,8 @@ export default function StagingClientView({
       toast.success(`${result.deleted}개 단어가 삭제되었습니다.`)
       setClearOpen(false)
       router.push(pathname)
-    } catch { 
-      toast.error('삭제에 실패했습니다.') 
+    } catch {
+      toast.error('삭제에 실패했습니다.')
     }
   }
 
@@ -497,9 +514,9 @@ export default function StagingClientView({
         dictionary_id: selectedDictionaryId,
         staging_id: selectedWord.id,
       })
-      
+
       toast.success(`${selectedWord.term} 사전에 등록되었습니다.`)
-      
+
       // Remove from local state and move to next
       const newWords = words.filter(w => w.id !== selectedWord.id)
       setWords(newWords)
@@ -511,307 +528,328 @@ export default function StagingClientView({
   }
 
   return (
-    <ResizablePanelGroup 
-      orientation="horizontal" 
+    <ResizablePanelGroup
+      orientation="horizontal"
       className="h-[calc(100vh-3.5rem)] rounded-none"
     >
       <ResizablePanel defaultSize={30} minSize={15}>
         <div className="flex flex-col h-full overflow-hidden border-r">
-        {/* 검색 영역 — 상단 고정 */}
-        <div className="p-4 pb-3 space-y-3 border-b bg-background shrink-0">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">대기열 ({totalCount})</h2>
-            <div className="flex gap-1">
-              <DropdownMenu>
-                <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer" title="내보내기">
+          {/* 검색 영역 — 상단 고정 */}
+          <div className="p-4 pb-3 space-y-3 border-b bg-background shrink-0">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">대기열 ({totalCount})</h2>
+              <div className="flex gap-1">
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer" title="내보내기">
                     <Download className="h-4 w-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={async () => {
-                    try {
-                      toast.info('내보내기 준비 중...')
-                      const data = await getAllStagingWordsForExport()
-                      const csv = [
-                        'term,reading,meaning,frequency,part_of_speech,source',
-                        ...data.map(w => 
-                          [w.term, w.reading || '', `"${(w.meaning || '').replace(/"/g, '""')}"`, w.frequency, w.part_of_speech || '', w.source].join(',')
-                        )
-                      ].join('\n')
-                      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url; a.download = `shirube_dict_staging_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.csv`
-                      a.click(); URL.revokeObjectURL(url)
-                      toast.success(`${data.length}개 단어를 CSV로 내보냈습니다.`)
-                    } catch { toast.error('내보내기에 실패했습니다.') }
-                  }}>
-                    CSV로 내보내기
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={async () => {
-                    try {
-                      toast.info('내보내기 준비 중...')
-                      const data = await getAllStagingWordsForExport()
-                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement('a')
-                      a.href = url; a.download = `shirube_dict_staging_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.json`
-                      a.click(); URL.revokeObjectURL(url)
-                      toast.success(`${data.length}개 단어를 JSON으로 내보냈습니다.`)
-                    } catch { toast.error('내보내기에 실패했습니다.') }
-                  }}>
-                    JSON으로 내보내기
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <button
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                title="불러오기 (CSV/JSON)"
-                onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
-              >
-                <Upload className="h-4 w-4" />
-              </button>
-              <button
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                title="전체 일괄 사전 등록"
-                onClick={() => setBulkAllOpen(true)}
-              >
-                <BookCheck className="h-4 w-4" />
-              </button>
-              <button
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                title="품사 자동 채우기 (yomitan_pos_reference)"
-                onClick={handleBulkUpdatePos}
-              >
-                <Tag className="h-4 w-4" />
-              </button>
-              <button
-                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                title="JPDB 빈도수 자동 채우기"
-                onClick={handleUpdateJPDB}
-              >
-                <RefreshCw className="h-4 w-4" />
-              </button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-7 w-7 text-destructive hover:text-destructive" 
-                title="대기열 초기화"
-                onClick={() => setClearOpen(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            router.push(`${pathname}?q=${encodeURIComponent(searchInput)}`);
-          }} className="flex gap-2">
-            <Input 
-              placeholder="단어 검색 (엔터)" 
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-            />
-            <Button type="submit" variant="secondary">검색</Button>
-          </form>
-        </div>
-
-        {/* 단어 리스트 — 스크롤 영역 */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <div className="p-4 space-y-2">
-            {words.length === 0 ? (
-              <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
-            ) : (
-              words.map((word, idx) => (
-                <div
-                  key={word.id}
-                  ref={(el) => { itemRefs.current[idx] = el }}
-                  onClick={() => setSelectedIndex(idx)}
-                  className={`p-3 border rounded-md cursor-pointer transition-colors ${
-                    idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
-                  }`}
-                >
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold text-lg flex-1 min-w-0 truncate">{word.term}</span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
-                      <button
-                        className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
-                        title="수정"
-                        onClick={(e) => { e.stopPropagation(); openEditDialog(word) }}
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                      <button
-                        className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
-                        title="삭제"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteWord(word.id, word.term) }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </div>
-                  {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1">{word.part_of_speech}</div>}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* 페이지네이션 — 하단 고정 */}
-        {totalCount > pageSize && (() => {
-          const totalPages = Math.ceil(totalCount / pageSize)
-          const queryParam = searchInput ? `q=${encodeURIComponent(searchInput)}&` : ''
-          return (
-            <div className="p-3 border-t bg-background flex items-center justify-between text-sm shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage <= 1}
-                onClick={() => router.push(`${pathname}?${queryParam}page=${currentPage - 1}`)}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                이전
-              </Button>
-              {isEditingPage ? (
-                <form onSubmit={(e) => {
-                  e.preventDefault()
-                  const p = Math.max(1, Math.min(totalPages, parseInt(pageInput, 10) || 1))
-                  setIsEditingPage(false)
-                  router.push(`${pathname}?${queryParam}page=${p}`)
-                }} className="flex items-center gap-1">
-                  <Input
-                    className="w-16 h-7 text-center text-sm"
-                    value={pageInput}
-                    onChange={e => setPageInput(e.target.value)}
-                    onBlur={() => setIsEditingPage(false)}
-                    autoFocus
-                  />
-                  <span className="text-muted-foreground">/ {totalPages}</span>
-                </form>
-              ) : (
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={async () => {
+                      try {
+                        toast.info('내보내기 준비 중...')
+                        const data = await getAllStagingWordsForExport()
+                        const csv = [
+                          'term,reading,meaning,frequency,part_of_speech,source',
+                          ...data.map(w =>
+                            [w.term, w.reading || '', `"${(w.meaning || '').replace(/"/g, '""')}"`, w.frequency, w.part_of_speech || '', w.source].join(',')
+                          )
+                        ].join('\n')
+                        const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url; a.download = `shirube_dict_staging_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`
+                        a.click(); URL.revokeObjectURL(url)
+                        toast.success(`${data.length}개 단어를 CSV로 내보냈습니다.`)
+                      } catch { toast.error('내보내기에 실패했습니다.') }
+                    }}>
+                      CSV로 내보내기
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={async () => {
+                      try {
+                        toast.info('내보내기 준비 중...')
+                        const data = await getAllStagingWordsForExport()
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url; a.download = `shirube_dict_staging_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`
+                        a.click(); URL.revokeObjectURL(url)
+                        toast.success(`${data.length}개 단어를 JSON으로 내보냈습니다.`)
+                      } catch { toast.error('내보내기에 실패했습니다.') }
+                    }}>
+                      JSON으로 내보내기
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <button
-                  onClick={() => { setPageInput(String(currentPage)); setIsEditingPage(true) }}
-                  className="text-muted-foreground hover:text-foreground hover:underline cursor-pointer transition-colors"
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                  title="불러오기 (CSV/JSON)"
+                  onClick={() => { setImportOpen(true); setImportData([]); setImportFileName('') }}
                 >
-                  {currentPage} / {totalPages}
+                  <Upload className="h-4 w-4" />
                 </button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage >= totalPages}
-                onClick={() => router.push(`${pathname}?${queryParam}page=${currentPage + 1}`)}
-              >
-                다음
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
+                <button
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                  title="전체 일괄 사전 등록"
+                  onClick={() => setBulkAllOpen(true)}
+                >
+                  <BookCheck className="h-4 w-4" />
+                </button>
+                <button
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                  title="품사 자동 채우기 (yomitan_pos_reference)"
+                  onClick={handleBulkUpdatePos}
+                >
+                  <Tag className="h-4 w-4" />
+                </button>
+                <button
+                  className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                  title="JPDB 빈도수 자동 채우기"
+                  onClick={handleUpdateJPDB}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-destructive hover:text-destructive"
+                  title="대기열 초기화"
+                  onClick={() => setClearOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          )
-        })()}
+            <div className="flex items-center gap-1.5">
+              <button
+                className={cn(
+                  'inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors',
+                  dictFilterActive
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'hover:bg-accent hover:text-accent-foreground border-border text-muted-foreground'
+                )}
+                onClick={() => {
+                  if (dictFilterActive) {
+                    setDictFilterActive(false)
+                    router.push(buildQuery({ page: 1, dictFilter: false }))
+                  } else {
+                    setDictFilterDialogOpen(true)
+                  }
+                }}
+              >
+                <Filter className="h-3 w-3" />
+                {dictFilterActive
+                  ? `중복 필터: ${dictionaries.find(d => String(d.id) === dictFilterDialogDictId)?.name ?? '사전'}`
+                  : '중복 필터'}
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              router.push(buildQuery({ q: searchInput, page: 1 }));
+            }} className="flex gap-2">
+              <Input
+                placeholder="단어 검색 (엔터)"
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+              />
+              <Button type="submit" variant="secondary">검색</Button>
+            </form>
+          </div>
+
+          {/* 단어 리스트 — 스크롤 영역 */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="p-4 space-y-2">
+              {words.length === 0 ? (
+                <p className="text-sm text-muted-foreground">대기열이 비어있거나 검색 결과가 없습니다.</p>
+              ) : (
+                words.map((word, idx) => (
+                  <div
+                    key={word.id}
+                    ref={(el) => { itemRefs.current[idx] = el }}
+                    onClick={() => setSelectedIndex(idx)}
+                    className={`p-3 border rounded-md cursor-pointer transition-colors ${idx === selectedIndex ? 'bg-primary/10 border-primary' : 'hover:bg-muted'
+                      }`}
+                  >
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-lg flex-1 min-w-0 truncate">{word.term}</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full">Freq: {word.frequency}</span>
+                        <button
+                          className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                          title="수정"
+                          onClick={(e) => { e.stopPropagation(); openEditDialog(word) }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button
+                          className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
+                          title="삭제"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteWord(word.id, word.term) }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {word.part_of_speech && <div className="text-sm text-muted-foreground mt-1">{word.part_of_speech}</div>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* 페이지네이션 — 하단 고정 */}
+          {totalCount > pageSize && (() => {
+            const totalPages = Math.ceil(totalCount / pageSize)
+            return (
+              <div className="p-3 border-t bg-background flex items-center justify-between text-sm shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => router.push(buildQuery({ page: currentPage - 1 }))}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  이전
+                </Button>
+                {isEditingPage ? (
+                  <form onSubmit={(e) => {
+                    e.preventDefault()
+                    const p = Math.max(1, Math.min(totalPages, parseInt(pageInput, 10) || 1))
+                    setIsEditingPage(false)
+                    router.push(buildQuery({ page: p }))
+                  }} className="flex items-center gap-1">
+                    <Input
+                      className="w-16 h-7 text-center text-sm"
+                      value={pageInput}
+                      onChange={e => setPageInput(e.target.value)}
+                      onBlur={() => setIsEditingPage(false)}
+                      autoFocus
+                    />
+                    <span className="text-muted-foreground">/ {totalPages}</span>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => { setPageInput(String(currentPage)); setIsEditingPage(true) }}
+                    className="text-muted-foreground hover:text-foreground hover:underline cursor-pointer transition-colors"
+                  >
+                    {currentPage} / {totalPages}
+                  </button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => router.push(buildQuery({ page: currentPage + 1 }))}
+                >
+                  다음
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )
+          })()}
         </div>
       </ResizablePanel>
-      
+
       <ResizableHandle withHandle />
-      
+
       <ResizablePanel defaultSize={30} minSize={25} className="bg-muted/10 p-4 overflow-y-auto">
         {selectedWord ? (
           <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 min-h-full flex flex-col">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-xl">{selectedWord.term} 등록</h3>
-                  <span className="text-xs text-muted-foreground font-mono bg-background px-2 py-1 rounded border shadow-sm">Cmd+Enter로 저장</span>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label htmlFor="term">표제어 (Term) <span className="text-red-500">*</span></Label>
-                    {formData.tags && <span className="text-xs text-muted-foreground">대체 표기: {formData.tags}</span>}
-                  </div>
-                  <Input 
-                    id="term" 
-                    value={formData.term}
-                    onChange={e => setFormData({...formData, term: e.target.value})}
-                    required 
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="reading">요미가나 (Reading) <span className="text-red-500">*</span></Label>
-                  <Input 
-                    id="reading" 
-                    value={formData.reading}
-                    onChange={e => setFormData({...formData, reading: e.target.value})}
-                    required 
-                    autoFocus
-                  />
-                </div>
-                
-                <div className="space-y-2 flex-col flex flex-1 min-h-[150px]">
-                  <Label htmlFor="meaning">뜻 (Meaning) <span className="text-red-500">*</span></Label>
-                  <RichTextEditor 
-                    value={formData.meaning}
-                    onChange={(html) => setFormData({...formData, meaning: html})}
-                  />
-                </div>
-                
-                <div className="space-y-2 pb-2">
-                  <Label>품사 (Yomitan rules) <span className="text-muted-foreground text-xs font-normal">— 없으면 활용 없음</span></Label>
-                  <PosToggleGroup
-                    value={formData.part_of_speech}
-                    onChange={(v) => setFormData({...formData, part_of_speech: v})}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>등록할 사전 <span className="text-red-500">*</span></Label>
-                  {dictionaries.length === 0 ? (
-                    <p className="text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
-                      등록된 사전이 없습니다.{' '}
-                      <a href="/dictionaries" className="underline hover:text-foreground">사전 관리</a>에서 먼저 사전을 생성하세요.
-                    </p>
-                  ) : (
-                    <Select
-                      value={selectedDictionaryId !== undefined ? String(selectedDictionaryId) : '__none__'}
-                      onValueChange={v => setSelectedDictionaryId(v === '__none__' ? undefined : Number(v))}
-                    >
-                      <SelectTrigger>
-                        <span className="flex flex-1 text-left truncate">
-                          {selectedDictionaryId !== undefined
-                            ? (dictionaries.find(d => d.id === selectedDictionaryId)?.name ?? String(selectedDictionaryId))
-                            : '사전 선택 안 함'}
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">사전 선택 안 함</SelectItem>
-                        {dictionaries.map(d => (
-                          <SelectItem key={d.id} value={String(d.id)}>
-                            {d.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-xl">{selectedWord.term} 등록</h3>
+              <span className="text-xs text-muted-foreground font-mono bg-background px-2 py-1 rounded border shadow-sm">Cmd+Enter로 저장</span>
+            </div>
 
-                <div className="flex gap-2 mt-auto">
-                  <Button type="submit" className="flex-1" disabled={selectedDictionaryId === undefined}>사전에 등록</Button>
-                  <Button type="button" variant="outline" onClick={() => setBulkOpen(true)} title="현재 페이지 단어 일괄 등록" disabled={selectedDictionaryId === undefined}>
-                    일괄 등록
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center text-muted-foreground text-sm">
-                <p>선택된 단어가 없습니다.</p>
-                <p>대기열에 단어를 추가해주세요.</p>
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <Label htmlFor="term">표제어 (Term) <span className="text-red-500">*</span></Label>
+                {formData.tags && <span className="text-xs text-muted-foreground">대체 표기: {formData.tags}</span>}
               </div>
-            )}
+              <Input
+                id="term"
+                value={formData.term}
+                onChange={e => setFormData({ ...formData, term: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reading">요미가나 (Reading) <span className="text-red-500">*</span></Label>
+              <Input
+                id="reading"
+                value={formData.reading}
+                onChange={e => setFormData({ ...formData, reading: e.target.value })}
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2 flex-col flex flex-1 min-h-[150px]">
+              <Label htmlFor="meaning">뜻 (Meaning) <span className="text-red-500">*</span></Label>
+              <RichTextEditor
+                value={formData.meaning}
+                onChange={(html) => setFormData({ ...formData, meaning: html })}
+              />
+            </div>
+
+            <div className="space-y-2 pb-2">
+              <Label>품사 (Yomitan rules) <span className="text-muted-foreground text-xs font-normal">— 없으면 활용 없음</span></Label>
+              <PosToggleGroup
+                value={formData.part_of_speech}
+                onChange={(v) => setFormData({ ...formData, part_of_speech: v })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>등록할 사전 <span className="text-red-500">*</span></Label>
+              {dictionaries.length === 0 ? (
+                <p className="text-sm text-muted-foreground border rounded-md px-3 py-2 bg-muted/30">
+                  등록된 사전이 없습니다.{' '}
+                  <a href="/dictionaries" className="underline hover:text-foreground">사전 관리</a>에서 먼저 사전을 생성하세요.
+                </p>
+              ) : (
+                <Select
+                  value={selectedDictionaryId !== undefined ? String(selectedDictionaryId) : '__none__'}
+                  onValueChange={v => setSelectedDictionaryId(v === '__none__' ? undefined : Number(v))}
+                >
+                  <SelectTrigger>
+                    <span className="flex flex-1 text-left truncate">
+                      {selectedDictionaryId !== undefined
+                        ? (dictionaries.find(d => d.id === selectedDictionaryId)?.name ?? String(selectedDictionaryId))
+                        : '사전 선택 안 함'}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">사전 선택 안 함</SelectItem>
+                    {dictionaries.map(d => (
+                      <SelectItem key={d.id} value={String(d.id)}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-auto">
+              <Button type="submit" className="flex-1" disabled={selectedDictionaryId === undefined}>사전에 등록</Button>
+              <Button type="button" variant="outline" onClick={() => setBulkOpen(true)} title="현재 페이지 단어 일괄 등록" disabled={selectedDictionaryId === undefined}>
+                일괄 등록
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center text-muted-foreground text-sm">
+            <p>선택된 단어가 없습니다.</p>
+            <p>대기열에 단어를 추가해주세요.</p>
+          </div>
+        )}
       </ResizablePanel>
-      
+
       <ResizableHandle withHandle />
-      
+
       <ResizablePanel defaultSize={40} minSize={25} className="relative">
         {selectedWord ? (
-          <iframe 
+          <iframe
             src={`https://ja.dict.naver.com/#/search?query=${encodeURIComponent(selectedWord.term)}`}
             className="absolute inset-0 w-full h-full border-0"
             title="Naver Dictionary"
@@ -822,6 +860,44 @@ export default function StagingClientView({
           </div>
         )}
       </ResizablePanel>
+
+      {/* Dict Filter Dialog */}
+      <Dialog open={dictFilterDialogOpen} onOpenChange={setDictFilterDialogOpen}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle>중복 필터</DialogTitle>
+            <DialogDescription>선택한 사전에 이미 등록된 단어만 표시합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>사전 선택</Label>
+            <Select value={dictFilterDialogDictId} onValueChange={v => setDictFilterDialogDictId(v)}>
+              <SelectTrigger>
+                <span className="flex flex-1 text-left truncate">
+                  {dictionaries.find(d => String(d.id) === dictFilterDialogDictId)?.name ?? '사전 선택'}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {dictionaries.map(d => (
+                  <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDictFilterDialogOpen(false)}>취소</Button>
+            <Button
+              disabled={!dictFilterDialogDictId}
+              onClick={() => {
+                setDictFilterActive(true)
+                setDictFilterDialogOpen(false)
+                router.push(buildQuery({ page: 1, dictFilter: Number(dictFilterDialogDictId) }))
+              }}
+            >
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Import Dialog */}
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
@@ -851,7 +927,7 @@ export default function StagingClientView({
                 className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground file:cursor-pointer hover:file:bg-primary/90"
               />
             </div>
-            
+
             {importData.length > 0 && (
               <>
                 <p className="text-sm text-muted-foreground">
@@ -885,10 +961,10 @@ export default function StagingClientView({
                   </table>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Checkbox 
-                    id="skipDuplicates" 
-                    checked={skipDuplicates} 
-                    onCheckedChange={(v) => setSkipDuplicates(v === true)} 
+                  <Checkbox
+                    id="skipDuplicates"
+                    checked={skipDuplicates}
+                    onCheckedChange={(v) => setSkipDuplicates(v === true)}
                   />
                   <Label htmlFor="skipDuplicates" className="text-sm cursor-pointer">중복된 단어(term) 건너뛰기</Label>
                 </div>
@@ -902,7 +978,7 @@ export default function StagingClientView({
                 <span>{importProgress}%</span>
               </div>
               <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-                <div 
+                <div
                   className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
                   style={{ width: `${importProgress}%` }}
                 />

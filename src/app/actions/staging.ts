@@ -6,26 +6,47 @@ import { revalidatePath } from 'next/cache'
 import fs from 'fs/promises'
 import path from 'path'
 
-export async function getStagingWords(searchQuery: string = '', page: number = 1) {
+export async function getStagingWords(searchQuery: string = '', page: number = 1, dictFilterId?: number) {
   const pageSize = 100
   const searchPattern = searchQuery ? `%${searchQuery}%` : null
+  const offset = (page - 1) * pageSize
 
   const [words, countResult] = await Promise.all([
-    searchPattern
+    searchPattern && dictFilterId !== undefined
       ? prisma.$queryRaw<staging_words[]>`
-          SELECT * FROM staging_words 
+          SELECT * FROM staging_words
           WHERE is_processed = 0 AND term LIKE ${searchPattern}
-          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC 
-          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+            AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId})
+          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `
+      : searchPattern
+      ? prisma.$queryRaw<staging_words[]>`
+          SELECT * FROM staging_words
+          WHERE is_processed = 0 AND term LIKE ${searchPattern}
+          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `
+      : dictFilterId !== undefined
+      ? prisma.$queryRaw<staging_words[]>`
+          SELECT * FROM staging_words
+          WHERE is_processed = 0
+            AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId})
+          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC
+          LIMIT ${pageSize} OFFSET ${offset}
         `
       : prisma.$queryRaw<staging_words[]>`
-          SELECT * FROM staging_words 
+          SELECT * FROM staging_words
           WHERE is_processed = 0
-          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC 
-          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+          ORDER BY CASE WHEN frequency = -1 THEN 1 ELSE 0 END ASC, frequency ASC
+          LIMIT ${pageSize} OFFSET ${offset}
         `,
-    searchPattern
+    searchPattern && dictFilterId !== undefined
+      ? prisma.$queryRaw<{count: bigint}[]>`SELECT COUNT(*) as count FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern} AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId})`
+      : searchPattern
       ? prisma.$queryRaw<{count: bigint}[]>`SELECT COUNT(*) as count FROM staging_words WHERE is_processed = 0 AND term LIKE ${searchPattern}`
+      : dictFilterId !== undefined
+      ? prisma.$queryRaw<{count: bigint}[]>`SELECT COUNT(*) as count FROM staging_words WHERE is_processed = 0 AND term IN (SELECT term FROM dictionary_entries WHERE dictionary_id = ${dictFilterId})`
       : prisma.$queryRaw<{count: bigint}[]>`SELECT COUNT(*) as count FROM staging_words WHERE is_processed = 0`
   ])
 
