@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { dictionary_entries } from '@prisma/client'
+import { getDictionaryEntries } from '@/app/actions/dictionary'
 import {
   Table,
   TableBody,
@@ -20,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { deleteDictionaryEntry, updateDictionaryEntry } from '@/app/actions/dictionary'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { toast } from 'sonner'
-import { Trash2, Edit, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Trash2, Edit, Download, ChevronLeft, ChevronRight, Search, ChevronsUpDown, ChevronUp, ChevronDown } from 'lucide-react'
 
 const PAGE_SIZE = 50
 
@@ -64,13 +65,13 @@ function PosToggleGroup({ value, onChange }: { value: string; onChange: (v: stri
 }
 
 export default function DictionaryClientView({
-  initialEntries,
   dictionaries = [],
 }: {
-  initialEntries: DictionaryEntry[]
   dictionaries?: DictionaryOption[]
 }) {
-  const [entries, setEntries] = useState(initialEntries)
+  const [entries, setEntries] = useState<DictionaryEntry[]>([])
+  const [hasQueried, setHasQueried] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [filterDictId, setFilterDictId] = useState<string>('all')
   const [editOpen, setEditOpen] = useState(false)
@@ -78,8 +79,19 @@ export default function DictionaryClientView({
   const [editForm, setEditForm] = useState({ term: '', reading: '', meaning: '', part_of_speech: '', pitch_accent: '', tags: '' })
   const [saving, setSaving] = useState(false)
   const [page, setPage] = useState(1)
-  const [isEditingPage, setIsEditingPage] = useState(false)
-  const [pageInput, setPageInput] = useState('1')
+  const [sortCol, setSortCol] = useState<'term' | 'reading' | 'part_of_speech' | 'dictionary' | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const handleSort = (col: typeof sortCol) => {
+    if (sortCol === col) {
+      if (sortDir === 'asc') setSortDir('desc')
+      else setSortCol(null)
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+    setPage(1)
+  }
 
   const filteredEntries = entries.filter(e => {
     const matchSearch = !search || e.term.includes(search) || e.reading.includes(search) || e.meaning.includes(search)
@@ -89,8 +101,30 @@ export default function DictionaryClientView({
     return matchSearch && matchDict
   })
 
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE))
-  const pagedEntries = filteredEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const sortedEntries = sortCol ? [...filteredEntries].sort((a, b) => {
+    let av = '', bv = ''
+    if (sortCol === 'term') { av = a.term; bv = b.term }
+    else if (sortCol === 'reading') { av = a.reading; bv = b.reading }
+    else if (sortCol === 'part_of_speech') { av = a.part_of_speech; bv = b.part_of_speech }
+    else if (sortCol === 'dictionary') { av = a.dictionary?.name ?? ''; bv = b.dictionary?.name ?? '' }
+    return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+  }) : filteredEntries
+
+  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE))
+  const pagedEntries = sortedEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const handleQuery = async () => {
+    setIsLoading(true)
+    try {
+      const dictId = filterDictId !== 'all' && filterDictId !== 'none' ? Number(filterDictId) : undefined
+      const data = await getDictionaryEntries(dictId)
+      setEntries(data)
+      setHasQueried(true)
+      setPage(1)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleDelete = async (id: number) => {
     if (!confirm('정말 삭제하시겠습니까?')) return
@@ -160,14 +194,8 @@ export default function DictionaryClientView({
     <div className="space-y-4 pb-20">
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div className="flex items-center gap-3">
-          <Input
-            placeholder="단어, 요미가나, 뜻 검색..."
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
-            className="max-w-xs"
-          />
           {dictionaries.length > 0 && (
-            <Select value={filterDictId} onValueChange={v => { setFilterDictId(v ?? 'all'); setPage(1) }}>
+            <Select value={filterDictId} onValueChange={v => setFilterDictId(v ?? 'all')}>
               <SelectTrigger className="w-44">
                 <span className="flex flex-1 text-left truncate">
                   {filterDictId === 'all' ? '전체 사전' : filterDictId === 'none' ? '사전 미지정' : (dictionaries.find(d => String(d.id) === filterDictId)?.name ?? filterDictId)}
@@ -184,11 +212,27 @@ export default function DictionaryClientView({
               </SelectContent>
             </Select>
           )}
+          <Button onClick={handleQuery} disabled={isLoading}>
+            {isLoading
+              ? <><div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-muted border-t-primary-foreground" />불러오는 중...</>
+              : <><Search className="h-4 w-4 mr-2" />조회</>
+            }
+          </Button>
+          {hasQueried && (
+            <Input
+              placeholder="단어, 요미가나, 뜻 검색..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              className="max-w-xs"
+            />
+          )}
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-sm text-muted-foreground">
-            총 {filteredEntries.length.toLocaleString()}개
-          </div>
+          {hasQueried && (
+            <div className="text-sm text-muted-foreground">
+              총 {filteredEntries.length.toLocaleString()}개
+            </div>
+          )}
           <div className="flex gap-2 border-l pl-4">
             <Button variant="outline" onClick={() => openExport('yomitan')}>
               <Download className="h-4 w-4 mr-1" />
@@ -202,20 +246,46 @@ export default function DictionaryClientView({
         </div>
       </div>
 
-      <div className="border rounded-md bg-card">
-        <Table>
-          <TableHeader>
+      <div className="border rounded-md bg-card overflow-hidden">
+        <Table containerClassName="overflow-y-auto max-h-[calc(100vh-320px)]">
+          <TableHeader className="sticky top-0 bg-card z-10 shadow-sm">
             <TableRow>
-              <TableHead>단어 (Term)</TableHead>
-              <TableHead>요미가나 (Reading)</TableHead>
-              <TableHead>품사 (POS)</TableHead>
+              {([
+                { key: 'term', label: '단어 (Term)' },
+                { key: 'reading', label: '요미가나 (Reading)' },
+                { key: 'part_of_speech', label: '품사 (POS)' },
+              ] as const).map(({ key, label }) => (
+                <TableHead key={key} className="cursor-pointer select-none hover:bg-muted/50" onClick={() => handleSort(key)}>
+                  <div className="flex items-center gap-1">
+                    {label}
+                    {sortCol === key
+                      ? sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                      : <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />}
+                  </div>
+                </TableHead>
+              ))}
               <TableHead>뜻풀이 (Meaning)</TableHead>
-              {dictionaries.length > 0 && <TableHead>사전</TableHead>}
+              {dictionaries.length > 0 && (
+                <TableHead className="cursor-pointer select-none hover:bg-muted/50" onClick={() => handleSort('dictionary')}>
+                  <div className="flex items-center gap-1">
+                    사전
+                    {sortCol === 'dictionary'
+                      ? sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                      : <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />}
+                  </div>
+                </TableHead>
+              )}
               <TableHead className="w-[100px] text-right">관리</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pagedEntries.length === 0 ? (
+            {!hasQueried ? (
+              <TableRow>
+                <TableCell colSpan={dictionaries.length > 0 ? 6 : 5} className="text-center py-16 text-muted-foreground">
+                  사전을 선택하고 조회 버튼을 눌러주세요.
+                </TableCell>
+              </TableRow>
+            ) : pagedEntries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={dictionaries.length > 0 ? 6 : 5} className="text-center py-10 text-muted-foreground">검색 결과가 없습니다.</TableCell>
               </TableRow>
@@ -257,42 +327,38 @@ export default function DictionaryClientView({
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-1">
           <span className="text-sm text-muted-foreground">
-            {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, filteredEntries.length).toLocaleString()} / {filteredEntries.length.toLocaleString()}개
+            {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * PAGE_SIZE, sortedEntries.length).toLocaleString()} / {sortedEntries.length.toLocaleString()}개
           </span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setPage(p => { setPageInput(String(p - 1)); return p - 1 }) }} disabled={page === 1}>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="px-2" onClick={() => setPage(1)} disabled={page === 1}>
+              <ChevronLeft className="h-3 w-3" /><ChevronLeft className="h-3 w-3 -ml-2" />
+            </Button>
+            <Button variant="outline" size="sm" className="px-2" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            {isEditingPage ? (
-              <input
-                type="number"
-                className="w-14 text-center text-sm border rounded-md px-1 py-0.5 tabular-nums bg-background"
-                value={pageInput}
-                min={1}
-                max={totalPages}
-                autoFocus
-                onChange={e => setPageInput(e.target.value)}
-                onBlur={() => {
-                  const n = parseInt(pageInput)
-                  if (!isNaN(n)) setPage(Math.min(Math.max(1, n), totalPages))
-                  setIsEditingPage(false)
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                  if (e.key === 'Escape') { setIsEditingPage(false); setPageInput(String(page)) }
-                }}
-              />
-            ) : (
-              <span
-                className="text-sm tabular-nums cursor-pointer hover:underline"
-                onClick={() => { setPageInput(String(page)); setIsEditingPage(true) }}
-                title="클릭하여 페이지 이동"
-              >
-                {page} / {totalPages}
-              </span>
-            )}
-            <Button variant="outline" size="sm" onClick={() => { setPage(p => { setPageInput(String(p + 1)); return p + 1 }) }} disabled={page === totalPages}>
+            {(() => {
+              const WINDOW = 5
+              const half = Math.floor(WINDOW / 2)
+              let start = Math.max(1, page - half)
+              const end = Math.min(totalPages, start + WINDOW - 1)
+              if (end - start + 1 < WINDOW) start = Math.max(1, end - WINDOW + 1)
+              return Array.from({ length: end - start + 1 }, (_, i) => start + i).map(p => (
+                <Button
+                  key={p}
+                  variant={p === page ? 'default' : 'outline'}
+                  size="sm"
+                  className="w-9"
+                  onClick={() => setPage(p)}
+                >
+                  {p}
+                </Button>
+              ))
+            })()}
+            <Button variant="outline" size="sm" className="px-2" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
               <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" className="px-2" onClick={() => setPage(totalPages)} disabled={page === totalPages}>
+              <ChevronRight className="h-3 w-3" /><ChevronRight className="h-3 w-3 -ml-2" />
             </Button>
           </div>
         </div>
