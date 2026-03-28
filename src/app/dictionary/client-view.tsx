@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { flushSync } from 'react-dom'
 import { dictionary_entries } from '@prisma/client'
 import { getDictionaryEntries } from '@/app/actions/dictionary'
 import {
@@ -139,7 +140,8 @@ export default function DictionaryClientView({
   const pagedEntries = sortedEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const handleQuery = async () => {
-    setIsLoading(true)
+    if (isLoading) return
+    flushSync(() => setIsLoading(true))
     try {
       const dictId = filterDictId !== 'all' && filterDictId !== 'none' ? Number(filterDictId) : undefined
       const data = await getDictionaryEntries(dictId)
@@ -269,7 +271,7 @@ export default function DictionaryClientView({
               </SelectContent>
             </Select>
           )}
-          <Button onClick={handleQuery} disabled={isLoading}>
+          <Button onClick={handleQuery}>
             {isLoading
               ? <><div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-muted border-t-primary-foreground" />불러오는 중...</>
               : <><Search className="h-4 w-4 mr-2" />조회</>
