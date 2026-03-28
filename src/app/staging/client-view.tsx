@@ -101,6 +101,9 @@ export default function StagingClientView({
   const [editingWord, setEditingWord] = useState<staging_words | null>(null)
   const [editFormData, setEditFormData] = useState({ term: '', reading: '', meaning: '', part_of_speech: '' })
   const [selectedDictionaryId, setSelectedDictionaryId] = useState<number | undefined>(dictionaries[0]?.id)
+  const [filterDictId, setFilterDictId] = useState<number | undefined>(
+    initialDictFilterId ?? dictionaries[0]?.id
+  )
   const [dictFilterActive, setDictFilterActive] = useState(initialDictFilterId !== undefined)
   const [noKanjiFilter, setNoKanjiFilter] = useState(initialNoKanji)
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -646,13 +649,13 @@ export default function StagingClientView({
             <div className="flex items-center gap-1.5">
               {dictionaries.length > 0 && (
                 <Select
-                  value={selectedDictionaryId ? String(selectedDictionaryId) : 'none'}
-                  onValueChange={v => setSelectedDictionaryId(v === 'none' ? undefined : Number(v))}
+                  value={filterDictId ? String(filterDictId) : 'none'}
+                  onValueChange={v => setFilterDictId(v === 'none' ? undefined : Number(v))}
                 >
                   <SelectTrigger className="h-7 w-36 text-xs">
                     <span className="truncate">
-                      {selectedDictionaryId
-                        ? (dictionaries.find(d => d.id === selectedDictionaryId)?.name ?? '사전 선택')
+                      {filterDictId
+                        ? (dictionaries.find(d => d.id === filterDictId)?.name ?? '사전 선택')
                         : '사전 선택'}
                     </span>
                   </SelectTrigger>
@@ -673,14 +676,14 @@ export default function StagingClientView({
                 )}
                 onClick={() => {
                   const next = !dictFilterActive
-                  if (next && !selectedDictionaryId) {
+                  if (next && !filterDictId) {
                     toast.warning('먼저 사전을 선택해주세요.')
                     return
                   }
                   setDictFilterActive(next)
                   setCheckedIds(new Set())
                   setIsSelectingAll(false)
-                  router.push(buildQuery({ page: 1, dictFilter: next ? selectedDictionaryId : false }))
+                  router.push(buildQuery({ page: 1, dictFilter: next ? filterDictId : false }))
                 }}
               >
                 <Filter className="h-3 w-3" />
@@ -703,6 +706,7 @@ export default function StagingClientView({
                   router.push(buildQuery({ page: 1, noKanji: next }))
                 }}
               >
+                <Filter className="h-3 w-3" />
                 비한자어 필터
               </button>
             </div>
