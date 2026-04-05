@@ -20,7 +20,13 @@
       "Bash(powershell.exe -Command \"Stop-Process -Id 2764 -Force; Write-Output 'done'\")",
       "Bash(node -e \"require\\(''''./src/app/actions/staging.ts''''\\)\")",
       "Bash(python:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Bash(pip list:*)",
+      "Bash(find node_modules/yomitan* node_modules/@yomitan* -name deinflect.json)",
+      "Bash(head -5 find node_modules -name deinflect*)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
